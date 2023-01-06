@@ -1,0 +1,2060 @@
+---
+title: "Phylogenomics of Pyrenodesmia"
+author: "Fernando Fernandez Mendoza"
+date: "7/6/2021"
+output:
+  html_document: 
+    keep_md: yes
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+  pdf_document: 
+    keep_tex: yes
+    toc: true
+    number_sections: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+## Data input
+
+The first parts of the script retrieve data sources, 
+
+```{r robinson_foulds, echo=FALSE}
+#setwd("")
+library(reshape2)
+library(ape)
+library(ggplot2)
+library(ggtree)
+library(fpc)
+library('TreeTools', quietly = TRUE, warn.conflicts = FALSE)
+library('TreeDist')
+library(vegan)
+library(mclust)
+library(knitr)
+library(dplyr)
+colorinos.bipolar<-c("#CAB2D6",
+                     "#A6CEE3",
+                     "#999999",
+                     "#6A3D9A",
+                     "#339933",
+                     "#E31A1C",
+                     "#FF7F00",
+                     "#1F78B4",
+                     "#B2DF8A",
+                     "#FB9A99",
+                     "#720D0E")
+
+#
+loci_trees<-read.tree("/Users/Fernando/Desktop/3_Phylogenomics/loci.treefile")
+loci_trees<-lapply(loci_trees,FUN=function(x){root(x,c("Xanpa"),resolve.root = TRUE)})
+class(loci_trees)<-"multiPhylo"
+
+culo<-read.table("/Users/Fernando/Desktop/3_Phylogenomics/loci.refOG_pe",header=FALSE)
+names(loci_trees)<-culo$V1
+loci_trees<-loci_trees[order(names(loci_trees))]
+#
+#class(loci_trees)<-"multiPhylo"
+
+#
+# Trim datasets 
+#
+nt<-length(loci_trees)
+spectrum <- viridisLite::plasma(30)
+treeCols <- spectrum[1:97]
+# 
+# Tree subsets per idiomorph
+#
+#mat<-c("P_erodens","alpha","P_chalybaea_X8","alpha","P_chalybaea_Y10","hmg","P_variabilis_X3","hmg","P_variabilis_Y5","hmg","P_variabilis_Y3","hmg","P_micromontana_X9","hmg","P_variabilis_Y6","alpha","P_alociza_Y11","hmg","P_variabilis_Y14","hmg","P_chalybaea_X4","alpha","P_chalybaea_Y1","alpha","P_albovariegata_Y8","hmg","P_transcaspica_X2","hmg","P_alociza_Y7","alpha","P_alociza1_X7","alpha","P_alociza_Y9","alpha","P_alociza_Y12","hmg","P_micromontana_X5","hmg","P_variabilis_Y2","alpha","P_albopruinosa_X6","hmg","P_sp_Y13","alpha","Gyalolechia","alpha")
+#dim(mat)<-c(2,23)
+#mat<-t(mat)
+#row.names(mat)<-mat[,1]
+#alpha_trees<-loci_trees
+#hmg_trees<-loci_trees
+#for (i in 1:length(alpha_trees)) alpha_trees[[i]]<-keep.tip(alpha_trees[[i]],mat[mat[,2]=="alpha",1])
+#for (i in 1:length(hmg_trees)) hmg_trees[[i]]<-keep.tip(hmg_trees[[i]],c(mat[mat[,2]=="hmg",1],"Gyalolechia"))
+#
+#
+#############################
+#distances <- ClusteringInfoDistance(loci_trees)
+#
+#
+#distances_df<-data.frame(melt(as.matrix(distances)))
+#save.image("R_distances.Rdata")
+load("/Users/Fernando/Desktop/3_Phylogenomics/R_distances.Rdata")
+########################################
+#
+# Import annotations
+genes<-read.delim("/Users/Fernando/Desktop/3_Phylogenomics/Pyrenodesmia_erodens.all.annotations.tsv",header=TRUE,row.names=1)
+# Save for later
+genes.all<-genes
+genes<-genes[,c(1,4)]
+culo<-sapply(strsplit(names(loci_trees),"-"),`[`,1)
+genes<-genes[culo,]
+culo<-strsplit(as.character(genes[,1]),"\\:")
+genes<-cbind(sapply(culo,`[`,1),genes)
+culo<-strsplit(sapply(culo,`[`,2),"-")
+genes<-cbind(sapply(culo,`[`,1),sapply(culo,`[`,2),genes)
+genes<-genes[,c(3,1,2,5)]
+colnames(genes)<-c("scaffold","start","end","description")
+genes$scaffold<-factor(genes$scaffold)
+
+#FIND OUTLIERS
+library (clstutils)
+outliers<-names(loci_trees)[!(findOutliers(as.matrix(distances),0.1,1))]
+mat<-c("Pyrenodesmiaerodens","alpha","PyrenodesmiaX8","alpha","PyrenodesmiaY10","hmg","PyrenodesmiaX3","hmg","PyrenodesmiaY5","hmg","PyrenodesmiaY3","hmg","PyrenodesmiaX9","hmg","PyrenodesmiaY6","alpha","PyrenodesmiaY11","hmg","PyrenodesmiaY14","hmg","PyrenodesmiaX4","alpha","PyrenodesmiaY1","alpha","PyrenodesmiaY8","hmg","PyrenodesmiaX2","hmg","PyrenodesmiaY7","alpha","PyrenodesmiaX7","alpha","PyrenodesmiaY9","alpha","PyrenodesmiaY12","hmg","PyrenodesmiaX5","hmg","PyrenodesmiaY2","alpha","PyrenodesmiaX6","hmg","PyrenodesmiaY4","hmg","PyrenodesmiaY13","alpha","Cafla","alpha","Xanpa","alpha")
+
+dim(mat)<-c(2,25)
+mat<-t(mat)
+row.names(mat)<-mat[,1]
+
+# Import xenologs
+xeno<-read.delim("/Users/Fernando/Desktop/3_Phylogenomics/putative_xenologs")
+genes2<-genes.all[,c(1,4)]
+culo<-strsplit(as.character(genes2[,1]),"\\:")
+genes2<-cbind(sapply(culo,`[`,1),genes2)
+culo<-strsplit(sapply(culo,`[`,2),"-")
+genes2<-cbind(sapply(culo,`[`,1),sapply(culo,`[`,2),genes2)
+genes2<-genes2[,c(3,1,2,5)]
+colnames(genes2)<-c("scaffold","start","end","description")
+#genes2[genes2$scaffold=="scaffold_21",1:2]
+#genes2[gsub("-T1","",xeno[,2]),1]
+
+# Import RIP
+rip<-read.delim("/Users/Fernando/Desktop/3_Phylogenomics/00_Ripper_results/RIPAnalysis.csv",sep=",")
+lrar<-read.delim("/Users/Fernando/Desktop/3_Phylogenomics/00_Ripper_results/LRAR analysis.csv",sep=",")
+# Import OGs
+ogs<-read.delim("/Users/Fernando/Desktop/3_Phylogenomics/orthology_groups_funannotate_compare.txt",header=FALSE)
+all.ogs<-ogs
+foo.ogs<-sapply(names(loci_trees),FUN=function(x){grep(x,ogs[,5])})
+# Import genome
+pe_genome<-read.FASTA("/Users/Fernando/Desktop/3_Phylogenomics/Pyrenodesmia_erodens.scaffolds.fa")
+
+ogs<-ogs[unlist(foo.ogs),]
+foo.ogs<-strsplit(as.character(ogs$V2)," ")
+ogs<-cbind(ogs,dn_ds=as.numeric(sapply(foo.ogs,`[`,1)))
+foo.ogs<-strsplit(sapply(foo.ogs,`[`,2),",")
+ogs<-cbind(ogs,uno=as.numeric(gsub("\\(","",sapply(foo.ogs,`[`,1))),dos=as.numeric(gsub("\\)","",sapply(foo.ogs,`[`,2))))
+foo.ogs<-sapply(names(loci_trees),FUN=function(x){grep(x,ogs[,5])})
+row.names(ogs)<-gsub("-T1","",melt(foo.ogs)[,2])
+```
+
+# The phylogenomic dataset
+
+```{r}
+synopsis<-read.delim2("/Users/Fernando/Desktop/01_paper_sanger_drive/genome_stats.txt")
+kable(synopsis)
+synopsis_backup<-synopsis
+synopsis<-synopsis[-c(1,2),]
+```
+
+```{r}
+ggplot(synopsis,aes(x=1,y=Assembly.Size))+geom_violin(fill = "#6001A655")+geom_point(position = position_jitter(seed = 1, width = 0.1),col = (1+as.numeric(synopsis$Species=="Pyrenodesmia_erodens")))+ labs (title="Assembly size") + theme_bw()
+```
+```{r}
+ggplot(synopsis,aes(x=1,y=Scaffold.N50))+geom_violin(fill = "#6001A655")+geom_point(position = position_jitter(seed = 1, width = 0.1),col = (1+as.numeric(synopsis$Species=="Pyrenodesmia_erodens")))+ labs (title="N50") + theme_bw()
+```
+```{r}
+ggplot(synopsis,aes(x=1,y=as.numeric(Percent.GC)))+geom_violin(fill = "#6001A655")+geom_point(position = position_jitter(seed = 1, width = 0.1),col = (1+as.numeric(synopsis$Species=="Pyrenodesmia_erodens")))+ labs (title="GC content") + theme_bw()
+```
+```{r}
+ggplot(synopsis,aes(x=1,y=Num.Genes))+geom_violin(fill = "#6001A655")+geom_point(position = position_jitter(seed = 1, width = 0.1),col = (1+as.numeric(synopsis$Species=="Pyrenodesmia_erodens")))+ labs (title="Number of genes") + theme_bw()
+```
+```{r}
+ggplot(synopsis,aes(x=1,y=Unique.Proteins))+geom_violin(fill = "#6001A655")+geom_point(position = position_jitter(seed = 1, width = 0.1),col = (1+as.numeric(synopsis$Species=="Pyrenodesmia_erodens")))+ labs (title="Unique proteins") + theme_bw()
+```
+```{r}
+ggplot(synopsis,aes(x=synopsis$Assembly.Size,y=Scaffold.N50))+geom_point(position = position_jitter(seed = 1, width = 0.1),col = (1+as.numeric(synopsis$Species=="Pyrenodesmia_erodens")))+ labs (title="Assembly size") + theme_bw()
+```
+
+# Description of the Pyrenodesmia erodens genome
+
+```{r,fig.height = 7, fig.width = 7}
+library(karyoploteR)
+library(GenomicRanges)
+repbase<-read.delim("/Users/Fernando/Desktop/01_paper_sanger_drive/P_erodens_sorted_relimited.fas.out",header = TRUE,sep="\t")
+repbase<-repbase[!(is.na(repbase$start)),]
+repbase$strand[repbase$strand=="C"]<-"-"
+repetitive_sequences<-repbase[repbase$class=="Simple_repeat",]
+mobile_elements<-repbase[repbase$class!="Simple_repeat",]
+mobile_elements<-mobile_elements[mobile_elements$class!="Low_complexity",]
+# Smith Watermann score
+mobile_elements<-mobile_elements[mobile_elements$SW_score>=100,]
+#mobile_elements<-mobile_elements[mobile_elements$class!="Unknown",]
+#mobile_elements<-mobile_elements[mobile_elements$class!="Unspecified",]
+dna1<-makeGRangesFromDataFrame(mobile_elements[mobile_elements$class%in%c("DNA/hAT-Ac","DNA/MULE-MuDR"),],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+ltrcopia<-makeGRangesFromDataFrame(mobile_elements[mobile_elements$class=="LTR/Copia",],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+ltrgypsy<-makeGRangesFromDataFrame(mobile_elements[mobile_elements$class=="LTR/Gypsy",],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+ltrNgaro<-makeGRangesFromDataFrame(mobile_elements[mobile_elements$class=="LTR/Ngaro",],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+helitron<-makeGRangesFromDataFrame(mobile_elements[mobile_elements$class=="RC/Helitron",],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+
+
+telomeres<-repetitive_sequences[repetitive_sequences$rpeat=="(AACCCT)n",]
+telomeres<-makeGRangesFromDataFrame(telomeres,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+
+#repetitive_sequences<-repetitive_sequences[repetitive_sequences$rpeat!="(AACCCT)n",]
+repetitive_sequences<-makeGRangesFromDataFrame(repetitive_sequences,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+mobile_elements<-makeGRangesFromDataFrame(mobile_elements,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="query_seq",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+ranges_genes2<-makeGRangesFromDataFrame(genes2,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         starts.in.df.are.0based=FALSE)
+
+pe.genome <- toGRanges(data.frame(chr=names(pe_genome), start=rep(1,length(pe_genome)), end=sapply(pe_genome,length)))
+
+```
+
+
+## Graphical description of the genome
+
+```{r, fig.width=8.5,fig.height=11}
+kp <- plotKaryotype(genome = pe.genome, plot.type= 2)
+kpPlotRegions(kp, data=paste(lrar$Name,":",lrar$Start+1,"-",lrar$End+1,sep=""),data.panel = 2,
+              col=grey(0.3), r0=-0.35, r1=-0.1, avoid.overlapping=FALSE)
+dens_Me<-kpPlotDensity(kp, data=mobile_elements,data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+coding_dens<-kpPlotDensity(kp, ranges_genes2, col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+kpPlotRegions(kp, data=repetitive_sequences,data.panel = 2,col=grey(0.2), r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=dna1,data.panel = 2,col=spectrum[5], r0=0.3, r1=0.6, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=ltrcopia,data.panel = 2,col=spectrum[25], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=ltrgypsy,data.panel = 2,col=spectrum[10], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=ltrNgaro,data.panel = 2,col=spectrum[15], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=helitron,data.panel = 2,col=spectrum[10], r0=0.3, r1=0.6, avoid.overlapping=FALSE)
+```
+
+
+
+## Cluster Large RIP Affected Regions based on their content in repeatable elements
+
+In higher eukaryotes the TE content has been shown to be directly related to the effective population size of the host organism. Lynch M, Conery JS (2003) The origins of genome complexity. Science 302: 1401–1404
+
+```{r}
+tabulate_rep_lrar<-table(repbase$class)
+tabulate_rep_lrar<-rbind(tabulate_rep_lrar,tabulate_rep_lrar)
+for (LRAR in c(1:dim(lrar)[1]))
+{
+  foo.scaffold<-lrar[LRAR,1]
+  foo.start<-lrar[LRAR,2]
+  foo.end<-lrar[LRAR,3]
+  foo.repbase<-repbase[repbase$query_seq==foo.scaffold&repbase$start>=foo.start&repbase$end<=foo.end,]
+  tabulate_rep_lrar<-rbind(tabulate_rep_lrar,table(foo.repbase$class)[colnames(tabulate_rep_lrar)])
+}
+
+tabulate_rep_lrar<-tabulate_rep_lrar[-1,]
+tabulate_rep_lrar[is.na(tabulate_rep_lrar)]<-0
+tabulate_rep_lrar1<-tabulate_rep_lrar[1,]
+tabulate_rep_lrar<-tabulate_rep_lrar[-1,]
+tabulate_rep_lrar<-cbind(lrar,tabulate_rep_lrar/lrar$Size)
+Coding_regions<-NULL
+tabulate_regions<-rbind(tabulate_rep_lrar1,tabulate_rep_lrar1)
+#tabulate_regions[]<-0
+for (LRAR in c(levels(factor(lrar[,1]))))
+{
+foo.lrar<-lrar[lrar[,1]==LRAR,]
+Coding_regions<-rbind(Coding_regions,cbind(Scaf=LRAR,Start=c(0,foo.lrar$End),End=c(foo.lrar$Start,length(pe_genome[[LRAR]]))))
+}
+Coding_regions<-Coding_regions[!(Coding_regions[,2]==0&Coding_regions[,3]==0),]
+for (LRAR in c(1:dim(Coding_regions)[1]))
+{
+  foo.scaffold<-Coding_regions[LRAR,1]
+  foo.start<-Coding_regions[LRAR,2]
+  foo.end<-Coding_regions[LRAR,3]
+  foo.repbase<-repbase[repbase$query_seq==foo.scaffold&repbase$start>=foo.start&repbase$end<=foo.end,]
+  tabulate_regions<-rbind(tabulate_regions,table(foo.repbase$class)[colnames(tabulate_regions)])
+rm (foo.scaffold)
+rm (foo.start)
+rm (foo.end)
+}
+tabulate_regions<-tabulate_regions[-c(1,2),]
+tabulate_regions[is.na(tabulate_regions)]<-0
+Coding_regions<-data.frame(Coding_regions[,1],matrix(as.numeric(Coding_regions[,-1]),ncol = ncol(Coding_regions)-1),tabulate_regions)
+Coding_regions[,4:13]<-Coding_regions[,4:13]/(Coding_regions[,3]-Coding_regions[,2])
+Coding_regions<-Coding_regions[(Coding_regions[,3]-Coding_regions[,2])!=0,]
+```
+
+## Cluster Large RIP Affected Regions based on their LTR content
+
+```{r}
+grupos<-Mclust(tabulate_rep_lrar[,c(13:15,18)],1:6)
+```
+```{r, fig.width=8.5,fig.height=11}
+kp <- plotKaryotype(genome = pe.genome,plot.type=2,chromosomes=c("scaffold_11","scaffold_12","scaffold_13","scaffold_14","scaffold_21","scaffold_23"))
+kpPlotRegions(kp, data=paste(lrar$Name,":",lrar$Start+1,"-",lrar$End+1,sep=""),data.panel = 2,
+              col=grey(0:0.5)[grupos$classification], r0=-0.35, r1=-0.1, avoid.overlapping=FALSE)
+kpPlotDensity(kp, data=mobile_elements,data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+kpPlotDensity(kp, ranges_genes2, col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+kpPlotRegions(kp, data=repetitive_sequences,data.panel = 2,col=grey(0.2), r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=dna1,data.panel = 2,col=spectrum[5], r0=0.3, r1=0.6, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=ltrcopia,data.panel = 2,col=spectrum[25], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=ltrgypsy,data.panel = 2,col=spectrum[10], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=ltrNgaro,data.panel = 2,col=spectrum[15], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=helitron,data.panel = 2,col=spectrum[10], r0=0.3, r1=0.6, avoid.overlapping=FALSE)
+#, border=spectrum[10], r0=1, r1=-0.5, avoid.overlapping=FALSE)
+```
+
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,10],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[10]) + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,11],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[11]) + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,12],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[12])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,13],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[13])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,14],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[14])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,15],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[15])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,16],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[16])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,17],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[17])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,18],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[18])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+ggplot(data.frame(lrars=tabulate_rep_lrar[,19],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title=colnames(tabulate_rep_lrar)[19])  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+## Centromeres
+
+ Based on only 16 kb of sequence, it was concluded that Neurospora centromeres are composed of degenerate transposons, mostly retrotransposons, and simple sequence repeats. The degenerate nature of the transposons is due to the action of a premeiotic process called “Repeat-Induced Point mutation” (RIP), which through an unknown mechanism recognizes repeated DNA and mutates both copies, yielding numerous C:T and G:A transition mutations (Cambareri et al., 1989, Selker, 1990). RIP will continue in successive sexual cycles until sequence identity between two copies decreases below ~85% but it will begin again if such regions become re-duplicated (Cambareri et al., 1991). Presumably these cycles of duplication and mutagenesis can continue until no Cs remain. Combined with potential gene conversion or recombination events, RIP appears to provide an interesting mechanism for diversification of centromeric DNA in many filamentous fungi.
+ 
+```{r, fig.width=8.5,fig.height=11}
+lrar_clust1<-makeGRangesFromDataFrame(tabulate_rep_lrar[grupos$classification==1,],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="Name",
+                         start.field="Start",
+                         end.field="End",
+                         starts.in.df.are.0based=FALSE)
+lrar_clust2<-makeGRangesFromDataFrame(tabulate_rep_lrar[grupos$classification==2,],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="Name",
+                         start.field="Start",
+                         end.field="End",
+                         starts.in.df.are.0based=FALSE)
+lrar_clust3<-makeGRangesFromDataFrame(tabulate_rep_lrar[grupos$classification==3,],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="Name",
+                         start.field="Start",
+                         end.field="End",
+                         starts.in.df.are.0based=FALSE)
+lrar_clust4<-makeGRangesFromDataFrame(tabulate_rep_lrar[grupos$classification==4,],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="Name",
+                         start.field="Start",
+                         end.field="End",
+                         starts.in.df.are.0based=FALSE)
+
+kp <- plotKaryotype(genome = pe.genome, plot.type= 2)
+kpPlotRegions(kp, data=lrar_clust1,data.panel = 1,col=spectrum[5], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=lrar_clust2,data.panel = 1,col=spectrum[10], r0=0.3, r1=0.6, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=lrar_clust3,data.panel = 2,col=spectrum[15], r0=0, r1=0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, data=lrar_clust4,data.panel = 2,col=spectrum[25], r0=0.3, r1=0.6, avoid.overlapping=FALSE)
+```
+
+## Loss of synteny across the genome
+
+```{r}
+#meko<-"| |"
+#lost_out<-NULL
+#for (FILE in list.files("/Users/Fernando/Desktop/01_paper_sanger_drive/06_Synteny/all.html/")[-1])
+#{
+#salida<-NULL
+#prueba<-XML::readHTMLTable(paste("/Users/Fernando/Desktop/01_paper_sanger_drive/06_Synteny/all.html/",FILE,sep=""))
+#foo<-grep("Pyrenodesmiaerodens_",prueba[[1]])
+#  if(length(foo)!=0)
+#    {
+#    prueba<-prueba[[1]][,c(1,2,foo)]
+#    for (i in 3:dim(prueba)[2])
+#      {
+#      salida<-rbind(salida,as.matrix(prueba[min(grep("Pyrenodesmiaerodens",prueba[,i])):max(grep("Pyrenodesmiaerodens",prueba[,i])),c(1,2,i)]))
+#      }
+#    salida[,3]<-gsub("-T1","",salida[,3])
+#   salida<-cbind(salida,genes2[salida[,3],c("scaffold","start","end")])
+#    for (i in 1:dim(salida)[1])
+#      {
+#      if (salida[i,3]==meko)
+#        {
+#        salida[i,3]<-paste(salida[i-1,3],"lost",sep = "-")
+#        scaff_pre<-salida[i-1,4]
+#        j<-i
+#        while(is.na(salida[j,4]))
+#          {
+#          j=j+1
+#          }
+#        scaff_post<-salida[j,4]
+#        if(!(is.na(scaff_pre)|is.na(scaff_post)))
+#          {
+#          if(scaff_pre==scaff_post)
+#          {
+#          salida[i,4]<-scaff_pre
+#          salida[i,5]<-as.integer(mean(c(as.numeric(salida[j,5]),as.numeric(salida[i-1,5]))))
+#          salida[i,6]<-as.numeric(salida[i,5])+100
+#          }
+#        }
+#        }
+#   }
+#    salida<-salida[sapply(strsplit(salida[,3],"-"),`[`,2)=="lost"&!is.na(sapply(strsplit(salida[,3],"-"),`[`,2)),]
+#    if(dim(salida)[1]>0)
+#      {
+#      lost_out<-rbind(lost_out,cbind(FILE,unname(salida)))
+#    }
+#  }
+#}
+#colnames(lost_out)<-c("file","depth","ref","name","scaffold","start","end")
+```
+
+```{r, fig.width = 14,fig.height= 21}
+#lost_out<-lost_out[grep("Pyrenodesmiaerodens",lost_out$name),]
+#save(lost_out,file="/Users/Fernando/Desktop/01_paper_sanger_drive/synteny.Rdata")
+load("/Users/Fernando/Desktop/01_paper_sanger_drive/synteny.Rdata")
+lost_genes<-melt(strsplit(ogs$V5,", "))
+rownames(lost_genes)<-lost_genes[,1]
+foo<-table(lost_genes$L1)
+lost_genes<-lost_genes[lost_genes$L1%in%names(foo)[foo>=10],1]
+lost_genes<-lost_out[lost_out$ref%in%lost_genes,]
+
+
+
+lost_genes<-makeGRangesFromDataFrame(lost_genes,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+kp <- plotKaryotype(genome = pe.genome, plot.type= 2)
+kpPlotRegions(kp, data=paste(lrar$Name,":",lrar$Start+1,"-",lrar$End+1,sep=""),data.panel = 2,
+              col=grey(0.3), r0=-0.35, r1=-0.1, avoid.overlapping=FALSE)
+fer<-kpPlotDensity(kp, ranges_genes2, col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+cobol<-kpPlotDensity(kp,lost_genes, col=spectrum[10],data.panel = 1, r0=0, r1=1.5, window.size = 50000)
+trans<-kpPlotDensity(kp, data=mobile_elements,data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+```
+
+## Detail of disrupted scaffolds
+
+```{r}
+detail <- plotKaryotype(genome = pe.genome,plot.type=1,chromosomes=c("scaffold_11","scaffold_12","scaffold_13","scaffold_14","scaffold_21","scaffold_23"))
+kpPlotRegions(detail, data=paste(lrar$Name,":",lrar$Start+1,"-",lrar$End+1,sep=""),data.panel = 2,
+              col=grey(0.3), r0=-0.35, r1=-0.1, avoid.overlapping=FALSE)
+#kpPlotDensity(kp,lost_genes, col=spectrum[10],data.panel = 1, r0=0, r1=1, window.size = 50000)
+kpPlotDensity(detail, ranges_genes2, col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 10000)
+kpPlotDensity(detail,lost_genes, col=spectrum[10],data.panel = 1, r0=0, r1=1, window.size = 10000)
+```
+
+### Influence of the density of transposable elements and overall coding density on loss of synteny
+
+```{r}
+anova(glm(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density*trans$latest.plot$computed.values$density, family = poisson))
+summary(glm(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density*trans$latest.plot$computed.values$density, family = poisson))
+```
+```{r}
+plot(glm(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density*trans$latest.plot$computed.values$density, family = poisson))
+```
+```{r}
+boxplot(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density)
+```
+```{r}
+boxplot(cobol$latest.plot$computed.values$density~trans$latest.plot$computed.values$density)
+```
+### Taking regions with null gene density to implicitely eliminate the effect of centromeric regions and LRARs.
+
+```{r}
+plot(glm(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~fer$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]*trans$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0], family = poisson))
+```
+```{r}
+boxplot(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~fer$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0])
+```
+```{r}
+boxplot(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~trans$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0])
+```
+
+### Explicitely eliminating Subtelomeric regions
+
+To eliminate subtelomeric regions we substracted 0.30Mbp from each side of the scaffolds where Telomeric motif repeats have been identified.
+
+```{r, fig.width = 14,fig.height= 21}
+telomere_locs<-rbind(cbind(paste("scaffold",c(1:13,15,19:21,25,30,34),sep="_"),0,250000),cbind(paste("scaffold",c(1:7,9:12,14:18,22,25:29,32,33),sep="_"),sapply(pe_genome[paste("scaffold",c(1:7,9:12,14:18,22,25:29,32,33),sep="_")],length)-250000,sapply(pe_genome[paste("scaffold",c(1:7,9:12,14:18,22,25:29,32,33),sep="_")],length)))
+colnames(telomere_locs)<-c("scaffold","start","end")
+telomere_locs<-data.frame(scaffold=telomere_locs[,1],start=as.numeric(telomere_locs[,2]),end=as.numeric(telomere_locs[,3]))
+telomere_locs$start[telomere_locs$start<0]<-0
+telomere_locs$end[telomere_locs$end>sapply(pe_genome[telomere_locs$scaffold],length)]<-sapply(pe_genome[telomere_locs$scaffold],length)[telomere_locs$end>sapply(pe_genome[telomere_locs$scaffold],length)]
+telomere_locs<-makeGRangesFromDataFrame(telomere_locs,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+kp <- plotKaryotype(genome = pe.genome, plot.type= 2)
+kpPlotRegions(kp, telomere_locs,data.panel = 2,col=grey(0.3), r0=-0.35, r1=-0.1, avoid.overlapping=FALSE)
+fer<-kpPlotDensity(kp, GenomicRanges::setdiff(ranges_genes2,telomere_locs), col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+cobol<-kpPlotDensity(kp,GenomicRanges::setdiff(lost_genes,telomere_locs), col=spectrum[10],data.panel = 1, r0=0, r1=1.5, window.size = 50000)
+trans<-kpPlotDensity(kp, GenomicRanges::setdiff(mobile_elements,telomere_locs),data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+```
+
+### Influence of the density of transposable elements and overall coding density on loss of synteny
+
+```{r, output}
+summary(glm(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density*trans$latest.plot$computed.values$density, family = poisson))
+```
+```{r}
+anova(glm(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density*trans$latest.plot$computed.values$density, family = poisson))
+```
+
+```{r}
+plot(glm(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density*trans$latest.plot$computed.values$density, family = poisson))
+```
+
+```{r}
+boxplot(cobol$latest.plot$computed.values$density~fer$latest.plot$computed.values$density)
+```
+```{r}
+boxplot(cobol$latest.plot$computed.values$density~trans$latest.plot$computed.values$density)
+```
+
+### Taking regions with null gene density to implicitely eliminate the effect of centromeric regions and LRARs.
+
+```{r}
+summary(glm(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~fer$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]*trans$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0], family = poisson))
+```
+
+```{r}
+anova(glm(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~fer$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]*trans$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0], family = poisson))
+```
+
+```{r}
+plot(glm(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~fer$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]*trans$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0], family = poisson))
+```
+```{r}
+boxplot(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~fer$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0])
+```
+```{r}
+boxplot(cobol$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0]~trans$latest.plot$computed.values$density[cobol$latest.plot$computed.values$density!=0])
+```
+## Location of Orphan and underrepresented genes
+
+```{r}
+all.ogs<-all.ogs[grep("Pyrenodesmiaerodens",all.ogs$V5),]
+foo<-strsplit(all.ogs$V5,", ")
+# Get orphan genes
+prots_not_ogs<-unlist(foo)
+prots_not_ogs<-gsub("-T1","",prots_not_ogs)
+prots_not_ogs<-genes2[!(rownames(genes2)%in%prots_not_ogs),]
+# Get underrepresented genes
+ogs_depth<-sapply(foo,length)
+foo<-sapply(foo,FUN=function(x){x<-x[grep("Pyrenodesmiaerodens",x)]})
+ogs_depth<-ogs_depth[sapply(foo,length)==1]
+foo<-foo[sapply(foo,length)==1]
+foo<-foo[ogs_depth<=4]
+foo<-unlist(foo)
+foo<-gsub("-T1","",foo)
+foo<-genes2[(rownames(genes2)%in%foo),]
+
+#Karioplot_both
+prots_not_ogs<-makeGRangesFromDataFrame(prots_not_ogs,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+prots_og_4s<-makeGRangesFromDataFrame(foo,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+```
+```{r, fig.width = 14,fig.height= 21}
+kp <- plotKaryotype(genome = pe.genome, plot.type= 2)
+kpPlotRegions(kp, data=paste(lrar$Name,":",lrar$Start+1,"-",lrar$End+1,sep=""),data.panel = 2,
+              col=spectrum[3], r0=-0.35, r1=-0.1, avoid.overlapping=FALSE)
+#kpPlotDensity(kp, ranges_genes2, col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+kpPlotDensity(kp, data=mobile_elements,data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+kpPlotDensity(kp,lost_genes, col=spectrum[10],data.panel = 2, r0=0, r1=2, window.size = 50000)
+kpPlotDensity(kp, data=prots_og_4s,data.panel = 1,col="#6001A655", r0=0, r1=1,window.size=50000)
+kpPlotDensity(kp, data=prots_not_ogs,data.panel = 1,col=spectrum[10], r0=0, r1=1.75,window.size=50000)
+```
+
+
+## Compare subtelomeric regions and regions proximal to LRARs with the rest of the genome
+
+```{r}
+lrar_flanks<-makeGRangesFromDataFrame(lrar,
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="Name",
+                         start.field="Start",
+                         end.field="End",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+lrar_flanks<-flank(lrar_flanks,30000,both=TRUE)
+lrar_flanks<-reduce(lrar_flanks)
+lrar_flanks<-GenomicRanges::intersect(lrar_flanks,pe.genome)
+lrar_flanks_with_telomeres<-lrar_flanks
+lrar_flanks<-GenomicRanges::setdiff(lrar_flanks,telomere_locs)
+
+non_telomeric_regions<-suppressWarnings(c(telomere_locs,lrar_flanks))
+non_telomeric_regions<-reduce(non_telomeric_regions)
+non_telomeric_regions<-GenomicRanges::setdiff(pe.genome,non_telomeric_regions)
+
+kp <- plotKaryotype(genome = pe.genome, plot.type= 1)
+kpPlotRegions(kp, lrar_flanks,data.panel = 2,col=grey(0.3), r0=0, r1=-0.3, avoid.overlapping=FALSE)
+kpPlotRegions(kp, non_telomeric_regions,data.panel = 2,col="#6001A655", r0=0.3, r1=0.6, avoid.overlapping=FALSE)
+kpPlotRegions(kp, telomere_locs,data.panel = 2,col="#F9973E55", r0=0.6, r1=0.9, avoid.overlapping=FALSE)
+# gene density
+genes_density_nt<-kpPlotDensity(kp, subsetByOverlaps(ranges_genes2,non_telomeric_regions), col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+genes_density_t<-kpPlotDensity(kp, subsetByOverlaps(ranges_genes2,telomere_locs), col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+genes_density_r<-kpPlotDensity(kp, subsetByOverlaps(ranges_genes2,lrar_flanks), col="#6001A655",data.panel = 1, r0=0, r1=1, window.size = 50000)
+# Lost gene density
+lost_density_nt<-kpPlotDensity(kp, subsetByOverlaps(lost_genes,non_telomeric_regions), col=spectrum[10],data.panel = 1, r0=0, r1=1.5, window.size = 50000)
+lost_density_t<-kpPlotDensity(kp, subsetByOverlaps(lost_genes,telomere_locs), col=spectrum[10],data.panel = 1, r0=0, r1=1.5, window.size = 50000)
+lost_density_r<-kpPlotDensity(kp, subsetByOverlaps(lost_genes,lrar_flanks), col=spectrum[10],data.panel = 1, r0=0, r1=1.5, window.size = 50000)
+# Mobile element density
+trans_density_nt<-kpPlotDensity(kp, subsetByOverlaps(mobile_elements,non_telomeric_regions), data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+trans_density_t<-kpPlotDensity(kp, subsetByOverlaps(mobile_elements,telomere_locs),data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+trans_density_r<-kpPlotDensity(kp, subsetByOverlaps(mobile_elements,lrar_flanks),data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+# Underrepresented gene density (orthologs in 1 or two more genomes)
+under_density_nt<-kpPlotDensity(kp, subsetByOverlaps(prots_og_4s,non_telomeric_regions), data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+under_density_t<-kpPlotDensity(kp, subsetByOverlaps(prots_og_4s,telomere_locs),data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+under_density_r<-kpPlotDensity(kp, subsetByOverlaps(prots_og_4s,lrar_flanks),data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+# Orfan gene density
+orfan_density_nt<-kpPlotDensity(kp, subsetByOverlaps(prots_not_ogs,non_telomeric_regions), data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+orfan_density_t<-kpPlotDensity(kp, subsetByOverlaps(prots_not_ogs,telomere_locs),data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+orfan_density_r<-kpPlotDensity(kp, subsetByOverlaps(prots_not_ogs,lrar_flanks),data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+#
+
+```
+```{r, fig.height=7,fig.width=7}
+base.for.circos<-function(GENOME)
+{
+require(circlize)
+#------------------
+# Initialize
+#------------------
+circos.genomicInitialize(data.frame(names=names(GENOME),start=0,end=sapply(GENOME,length)),sector.names = c(1:36))
+set_track_gap(gap = 0.01)
+circos.genomicTrack(ylim=c(0,1), track.height=0.015,bg.col=NA,bg.border=TRUE,cell.padding=c(0,0,0,0))
+for (i in names(GENOME))
+  {
+  foo<-lrar_flanks[lrar_flanks@seqnames==i,]
+    if (length(foo)>0)
+  {
+    circos.genomicRect(cbind(foo@ranges@start,foo@ranges@start+foo@ranges@width-1), sector.index = i,ytop = 1, ybottom = 0, col=colorinos.bipolar[1], border = NA)
+  }
+    foo<-telomere_locs[telomere_locs@seqnames==i,]
+    if (length(foo)>0)
+  {
+    circos.genomicRect(cbind(foo@ranges@start,foo@ranges@start+foo@ranges@width-1), sector.index = i,ytop = 1, ybottom = 0, col=colorinos.bipolar[4], border = NA)
+    }
+}
+circos.genomicTrack(ylim=c(0,1), track.height=0.015,bg.col=NA,bg.border=TRUE,cell.padding=c(0,0,0,0))
+# First track LRAR
+set_track_gap(gap = 0.02)
+for (i in names(GENOME))
+{
+  foo<-lrar[lrar$Name==i,]
+  if (dim(foo)[1]>0)
+  {
+    circos.genomicRect(foo[,c(2,3)], sector.index = i,ytop = 1, ybottom = 0, col=grey(.5), border = NA)
+  }
+}
+# Second track Density mobile elements
+circos.genomicDensity(as.data.frame(mobile_elements),col = grey(0.5), count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+# Third Gipsy
+circos.genomicDensity(as.data.frame(ltrgypsy),col = spectrum[5], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+circos.genomicDensity(as.data.frame(ltrcopia),col = spectrum[10], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+circos.genomicDensity(as.data.frame(ltrNgaro),col = spectrum[15], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+circos.genomicDensity(as.data.frame(dna1),col = spectrum[20], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+circos.genomicDensity(as.data.frame(helitron),col = spectrum[25], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+
+circos.genomicDensity(as.data.frame(repetitive_sequences),col = spectrum[27], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+}
+
+fii<-base.for.circos(pe_genome)
+print(fii)
+```
+
+```{r, fig.height=7, fig.width=7}
+annotations_complete<-read.delim("/Users/Fernando/Desktop/01_paper_sanger_drive/Pyrenodesmia_erodens.annotations.txt",row.names=1)
+sec_clust<-makeGRangesFromDataFrame(genes2[genes.all$SecMet.Cluster!="",],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+
+sec_met<-makeGRangesFromDataFrame(genes2[rownames(annotations_complete)[annotations_complete$Secreted!=""],],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+cazymes<-makeGRangesFromDataFrame(genes2[rownames(annotations_complete)[annotations_complete$CAZyme!=""],],
+                         keep.extra.columns=FALSE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="scaffold",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+
+base.for.circos<-function(GENOME)
+{
+require(circlize)
+#------------------
+# Initialize
+#------------------
+circos.genomicInitialize(data.frame(names=names(GENOME),start=0,end=sapply(GENOME,length)),sector.names = c(1:36))
+set_track_gap(gap = 0.01)
+circos.genomicTrack(ylim=c(0,1), track.height=0.015,bg.col=NA,bg.border=TRUE,cell.padding=c(0,0,0,0))
+for (i in names(GENOME))
+  {
+  foo<-lrar_flanks[lrar_flanks@seqnames==i,]
+    if (length(foo)>0)
+  {
+    circos.genomicRect(cbind(foo@ranges@start,foo@ranges@start+foo@ranges@width-1), sector.index = i,ytop = 1, ybottom = 0, col=colorinos.bipolar[1], border = NA)
+  }
+    foo<-telomere_locs[telomere_locs@seqnames==i,]
+    if (length(foo)>0)
+  {
+    circos.genomicRect(cbind(foo@ranges@start,foo@ranges@start+foo@ranges@width-1), sector.index = i,ytop = 1, ybottom = 0, col=colorinos.bipolar[4], border = NA)
+    }
+}
+circos.genomicTrack(ylim=c(0,1), track.height=0.015,bg.col=NA,bg.border=TRUE,cell.padding=c(0,0,0,0))
+# First track LRAR
+set_track_gap(gap = 0.02)
+for (i in names(GENOME))
+{
+  foo<-lrar[lrar$Name==i,]
+  if (dim(foo)[1]>0)
+  {
+    circos.genomicRect(foo[,c(2,3)], sector.index = i,ytop = 1, ybottom = 0, col=grey(.5), border = NA)
+  }
+}
+
+# Second track Density genes
+circos.genomicDensity(as.data.frame(ranges_genes2),col = spectrum[1], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+# Missing genes
+circos.genomicDensity(as.data.frame(lost_genes),col = spectrum[5], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+# Small OGs
+circos.genomicDensity(as.data.frame(prots_og_4s),col = spectrum[10], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+# Orphan genes
+circos.genomicDensity(as.data.frame(prots_not_ogs),col = spectrum[15], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+circos.genomicDensity(as.data.frame(cazymes),col = spectrum[20], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+circos.genomicDensity(as.data.frame(sec_clust),col = spectrum[25], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+#
+circos.genomicDensity(as.data.frame(sec_met),col = spectrum[27], count_by = "number", track.height = 0.05,cell.padding=c(0,0,0,0))
+}
+
+fii<-base.for.circos(pe_genome)
+print(fii)
+```
+
+```{r}
+kp <- plotKaryotype(genome = pe.genome, plot.type= 1)
+
+#ltrgypsy
+ltrgypsy_density_nt<-kpPlotDensity(kp, subsetByOverlaps(ltrgypsy,non_telomeric_regions), data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+ltrgypsy_density_t<-kpPlotDensity(kp, subsetByOverlaps(ltrgypsy,telomere_locs),data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+ltrgypsy_density_r<-kpPlotDensity(kp, subsetByOverlaps(ltrgypsy,lrar_flanks),data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+#ltrcopia
+ltrcopia_density_nt<-kpPlotDensity(kp, subsetByOverlaps(ltrcopia,non_telomeric_regions), data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+ltrcopia_density_t<-kpPlotDensity(kp, subsetByOverlaps(ltrcopia,telomere_locs),data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+ltrcopia_density_r<-kpPlotDensity(kp, subsetByOverlaps(ltrcopia,lrar_flanks),data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+#ltrNgaro
+ltrNgaro_density_nt<-kpPlotDensity(kp, subsetByOverlaps(ltrNgaro,non_telomeric_regions), data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+ltrNgaro_density_t<-kpPlotDensity(kp, subsetByOverlaps(ltrNgaro,telomere_locs),data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+ltrNgaro_density_r<-kpPlotDensity(kp, subsetByOverlaps(ltrNgaro,lrar_flanks),data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+#dna1
+dna1_density_nt<-kpPlotDensity(kp, subsetByOverlaps(dna1,non_telomeric_regions), data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+dna1_density_t<-kpPlotDensity(kp, subsetByOverlaps(dna1,telomere_locs),data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+dna1_density_r<-kpPlotDensity(kp, subsetByOverlaps(dna1,lrar_flanks),data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+#helitron
+helitron_density_nt<-kpPlotDensity(kp, subsetByOverlaps(helitron,non_telomeric_regions), data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+helitron_density_t<-kpPlotDensity(kp, subsetByOverlaps(helitron,telomere_locs),data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+helitron_density_r<-kpPlotDensity(kp, subsetByOverlaps(helitron,lrar_flanks),data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+#repetitive_sequences
+repetitive_sequences_density_nt<-kpPlotDensity(kp, subsetByOverlaps(repetitive_sequences,non_telomeric_regions), data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+repetitive_sequences_density_t<-kpPlotDensity(kp, subsetByOverlaps(repetitive_sequences,telomere_locs),data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+repetitive_sequences_density_r<-kpPlotDensity(kp, subsetByOverlaps(repetitive_sequences,lrar_flanks),data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+
+# cazyme density
+cazymes_density_nt<-kpPlotDensity(kp, subsetByOverlaps(cazymes,non_telomeric_regions), data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+cazymes_density_t<-kpPlotDensity(kp, subsetByOverlaps(cazymes,telomere_locs),data.panel = 1, col=grey(0.3), r0=0, r1=1,window.size=50000)
+cazymes_density_r<-kpPlotDensity(kp, subsetByOverlaps(cazymes,lrar_flanks),data.panel = 1,col=grey(0.3), r0=0, r1=1,window.size=50000)
+# secmet density
+sec_met_density_nt<-kpPlotDensity(kp, subsetByOverlaps(sec_met,non_telomeric_regions), data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+sec_met_density_t<-kpPlotDensity(kp, subsetByOverlaps(sec_met,telomere_locs),data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+sec_met_density_r<-kpPlotDensity(kp, subsetByOverlaps(sec_met,lrar_flanks),data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+# clust density
+sec_clust_density_nt<-kpPlotDensity(kp, subsetByOverlaps(sec_clust,non_telomeric_regions), data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+sec_clust_density_t<-kpPlotDensity(kp, subsetByOverlaps(sec_clust,telomere_locs),data.panel = 2, col=grey(0.3), r0=0, r1=1,window.size=50000)
+sec_clust_density_r<-kpPlotDensity(kp, subsetByOverlaps(sec_clust,lrar_flanks),data.panel = 2,col=grey(0.3), r0=0, r1=1,window.size=50000)
+```
+
+### Differences in gene density between Telomeric, Centromeric+LRAR flanking regions and the rest of the genome
+
+```{r}
+ranges_results<-NULL
+for (REGION in c("general","telomeric","LRAR"))
+  {
+  if (REGION=="general")
+    {ranges2use<-non_telomeric_regions
+  }else if (REGION=="telomeric")
+    {ranges2use<-telomere_locs
+  }else if (REGION=="LRAR")
+  {ranges2use<-lrar_flanks
+    }
+  for (TYPE in c("gene_density","lost_genes","mobile_elements","ltrgypsy","ltrcopia","ltrNgaro","dna1","helitron","repetitive_sequences","small_ogs","orphan","cazymes","sec_clust","sec_met"))
+  {
+   if (REGION=="general"&TYPE=="gene_density")
+    {data2use<-genes_density_nt
+  }else if (REGION=="telomeric"&TYPE=="gene_density")
+    {data2use<-genes_density_t
+  }else if (REGION=="LRAR"&TYPE=="gene_density")
+  {data2use<-genes_density_r
+    } else if (REGION=="general"&TYPE=="lost_genes")
+    {data2use<-lost_density_nt
+  }else if (REGION=="telomeric"&TYPE=="lost_genes")
+    {data2use<-lost_density_t
+  }else if (REGION=="LRAR"&TYPE=="lost_genes")
+  {data2use<-lost_density_r
+    } else    if (REGION=="general"&TYPE=="mobile_elements")
+    {data2use<-trans_density_nt
+  }else if (REGION=="telomeric"&TYPE=="mobile_elements")
+    {data2use<-trans_density_t
+  }else if (REGION=="LRAR"&TYPE=="mobile_elements")
+  {data2use<-trans_density_r
+    } else    if (REGION=="general"&TYPE=="small_ogs")
+    {data2use<-under_density_nt
+  }else if (REGION=="telomeric"&TYPE=="small_ogs")
+    {data2use<-under_density_t
+  }else if (REGION=="LRAR"&TYPE=="small_ogs")
+  {data2use<-under_density_r
+    } else    if (REGION=="general"&TYPE=="orphan")
+    {data2use<-orfan_density_nt
+  }else if (REGION=="telomeric"&TYPE=="orphan")
+    {data2use<-orfan_density_t
+  }else if (REGION=="LRAR"&TYPE=="orphan")
+  {data2use<-orfan_density_r
+  } else    if (REGION=="general"&TYPE=="cazymes")
+    {data2use<-cazymes_density_nt
+  }else if (REGION=="telomeric"&TYPE=="cazymes")
+    {data2use<-cazymes_density_t
+  }else if (REGION=="LRAR"&TYPE=="cazymes")
+  {data2use<-cazymes_density_r
+  }else    if (REGION=="general"&TYPE=="sec_met")
+    {data2use<-sec_met_density_nt
+  }else if (REGION=="telomeric"&TYPE=="sec_met")
+    {data2use<-sec_met_density_t
+  }else if (REGION=="LRAR"&TYPE=="sec_met")
+  {data2use<-sec_met_density_r
+  }else    if (REGION=="general"&TYPE=="sec_clust")
+    {data2use<-sec_clust_density_nt
+  }else if (REGION=="telomeric"&TYPE=="sec_clust")
+    {data2use<-sec_clust_density_t
+  }else if (REGION=="LRAR"&TYPE=="sec_clust")
+  {data2use<-sec_clust_density_r
+  }else    if (REGION=="general"&TYPE=="ltrgypsy")
+    {data2use<-ltrgypsy_density_nt
+  }else if (REGION=="telomeric"&TYPE=="ltrgypsy")
+    {data2use<-ltrgypsy_density_t
+  }else if (REGION=="LRAR"&TYPE=="ltrgypsy")
+  {data2use<-ltrgypsy_density_r
+  }else if (REGION=="general"&TYPE=="ltrcopia")
+    {data2use<-ltrcopia_density_nt
+  }else if (REGION=="telomeric"&TYPE=="ltrcopia")
+    {data2use<-ltrcopia_density_t
+  }else if (REGION=="LRAR"&TYPE=="ltrcopia")
+  {data2use<-ltrcopia_density_r
+  }else if (REGION=="general"&TYPE=="ltrNgaro")
+    {data2use<-ltrNgaro_density_nt
+  }else if (REGION=="telomeric"&TYPE=="ltrNgaro")
+    {data2use<-ltrNgaro_density_t
+  }else if (REGION=="LRAR"&TYPE=="ltrNgaro")
+  {data2use<-ltrNgaro_density_r
+  }else    if (REGION=="general"&TYPE=="dna1")
+    {data2use<-dna1_density_nt
+  }else if (REGION=="telomeric"&TYPE=="dna1")
+    {data2use<-dna1_density_t
+  }else if (REGION=="LRAR"&TYPE=="dna1")
+  {data2use<-dna1_density_r
+  }else    if (REGION=="general"&TYPE=="helitron")
+    {data2use<-helitron_density_nt
+  }else if (REGION=="telomeric"&TYPE=="helitron")
+    {data2use<-helitron_density_t
+  }else if (REGION=="LRAR"&TYPE=="helitron")
+  {data2use<-helitron_density_r
+  }else    if (REGION=="general"&TYPE=="repetitive_sequences")
+    {data2use<-repetitive_sequences_density_nt
+  }else if (REGION=="telomeric"&TYPE=="repetitive_sequences")
+    {data2use<-repetitive_sequences_density_t
+  }else if (REGION=="LRAR"&TYPE=="repetitive_sequences")
+  {data2use<-repetitive_sequences_density_r
+  }
+  for (I in 1:length(ranges2use))
+{
+ranges_results<-rbind(ranges_results,cbind(REGION,TYPE,I,mean(  data2use$latest.plot$computed.values$density[attr(findOverlaps(data2use$latest.plot$computed.values$windows,ranges2use[I]),"from")])))
+}
+    }
+}
+ranges_results<-data.frame(region=factor(ranges_results[,1]),feature=factor(ranges_results[,2]),local=ranges_results[,3],density=as.numeric(ranges_results[,4]))
+```
+
+#### Density of mobile elements 
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="mobile_elements",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Density of mobile_elements")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="mobile_elements","density"],ranges_results[ranges_results$feature=="mobile_elements","region"],p.adjust.method = "BH")
+```
+
+#### LTRgypsy
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="ltrgypsy",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="LTR/Gypsy")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="ltrgypsy","density"],ranges_results[ranges_results$feature=="ltrgypsy","region"],p.adjust.method = "BH")
+```
+
+#### ltrcopia
+
+```{r}
+
+ggplot(ranges_results[ranges_results$feature=="ltrcopia",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="LTR/Copia")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="ltrcopia","density"],ranges_results[ranges_results$feature=="ltrcopia","region"],p.adjust.method = "BH")
+```
+
+#### ltrNgaro
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="ltrNgaro",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="LTR/Ngaro")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="ltrNgaro","density"],ranges_results[ranges_results$feature=="ltrNgaro","region"],p.adjust.method = "BH")
+```
+
+#### dna1
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="dna1",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="dna1")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="dna1","density"],ranges_results[ranges_results$feature=="dna1","region"],p.adjust.method = "BH")
+```
+
+#### helitron
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="helitron",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="helitron")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="helitron","density"],ranges_results[ranges_results$feature=="helitron","region"],p.adjust.method = "BH")
+```
+
+#### repetitive_sequences
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="repetitive_sequences",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="repetitive_sequences")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="repetitive_sequences","density"],ranges_results[ranges_results$feature=="repetitive_sequences","region"],p.adjust.method = "BH")
+```
+#
+#
+#### Gene density
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="gene_density",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Average Gene density per region")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="gene_density","density"],ranges_results[ranges_results$feature=="gene_density","region"],p.adjust.method = "BH")
+```
+
+#### Loss of synteny, density of putative missing genes
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="lost_genes",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Density of missing genes")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="lost_genes","density"],ranges_results[ranges_results$feature=="lost_genes","region"],p.adjust.method = "BH")
+```
+
+
+#### Small Orthogroups, with three samples or less
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="small_ogs",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Density of small OGs")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="small_ogs","density"],ranges_results[ranges_results$feature=="small_ogs","region"],p.adjust.method = "BH")
+```
+
+#### Density of orphan genes
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="orphan",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Density of orphan genes")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="orphan","density"],ranges_results[ranges_results$feature=="orphan","region"],p.adjust.method = "BH")
+```
+
+#### Density of cazyme genes
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="cazymes",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Density of cazyme genes")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="cazymes","density"],ranges_results[ranges_results$feature=="cazymes","region"],p.adjust.method = "BH")
+```
+
+#### Density of secreted genes
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="sec_met",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Density of sec_met genes")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="sec_met","density"],ranges_results[ranges_results$feature=="sec_met","region"],p.adjust.method = "BH")
+```
+
+#### Density of secondary metabolism clusters
+
+```{r}
+ggplot(ranges_results[ranges_results$feature=="sec_clust",],aes(x=region,y=density,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Density of sec_clust genes")  + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_results[ranges_results$feature=="sec_clust","density"],ranges_results[ranges_results$feature=="sec_clust","region"],p.adjust.method = "BH")
+```
+
+## Phylogenetic signal across the genome
+
+%### Plotting all 
+%```{r}
+%culo<-loci_trees[!sapply(loci_trees,FUN=function(x){is.monophyletic(unroot(x),c("Xanpa","Cafla"))})]
+%for (i in 1:length(culo))
+%{
+%  p<-ggtree(culo[[i]]) + geom_tippoint(color=as.numeric(factor(mat[culo[[i]]$tip.label,2])),size=3) + %geom_tiplab(align=FALSE, linetype="dotted", linesize=.3, offset=0.1)
+%print(p)
+%}
+%```
+
+
+```{r}
+het<-c("Pyrenodesmiaerodens_003026-T1",
+"Pyrenodesmiaerodens_008956-T1",
+"Pyrenodesmiaerodens_002843-T1",
+"Pyrenodesmiaerodens_008195-T1",
+"Pyrenodesmiaerodens_006652-T1",
+"Pyrenodesmiaerodens_007209-T1",
+"Pyrenodesmiaerodens_007178-T1",
+"Pyrenodesmiaerodens_001939-T1",
+"Pyrenodesmiaerodens_006912-T1",
+"Pyrenodesmiaerodens_001303-T1",
+"Pyrenodesmiaerodens_008514-T1",
+"Pyrenodesmiaerodens_007614-T1",
+"Pyrenodesmiaerodens_005425-T1",
+"Pyrenodesmiaerodens_003710-T1",
+"Pyrenodesmiaerodens_006911-T1",
+"Pyrenodesmiaerodens_003701-T1",
+"Pyrenodesmiaerodens_009360-T1",
+"Pyrenodesmiaerodens_001394-T1",
+"Pyrenodesmiaerodens_006881-T1",
+"Pyrenodesmiaerodens_004495-T1",
+"Pyrenodesmiaerodens_004888-T1",
+"Pyrenodesmiaerodens_006904-T1",
+"Pyrenodesmiaerodens_006707-T1",
+"Pyrenodesmiaerodens_003667-T1",
+"Pyrenodesmiaerodens_007504-T1",
+"Pyrenodesmiaerodens_007081-T1",
+"Pyrenodesmiaerodens_003230-T1",
+"Pyrenodesmiaerodens_000215-T1",
+"Pyrenodesmiaerodens_004826-T1",
+"Pyrenodesmiaerodens_008820-T1",
+"Pyrenodesmiaerodens_000990-T1",
+"Pyrenodesmiaerodens_004497-T1",
+"Pyrenodesmiaerodens_001877-T1",
+"Pyrenodesmiaerodens_008462-T1",
+"Pyrenodesmiaerodens_004488-T1",
+"Pyrenodesmiaerodens_008467-T1",
+"Pyrenodesmiaerodens_004430-T1",
+"Pyrenodesmiaerodens_001833-T1",
+"Pyrenodesmiaerodens_007926-T1",
+"Pyrenodesmiaerodens_008989-T1","Pyrenodesmiaerodens_008241-T1")
+het<-genes2[gsub("-T1","",het),]
+```
+
+## Plot pairwise heatmaps
+
+```{r}
+genes$scaffold<-factor(genes$scaffold)
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+{
+    distances_foo<-data.frame(melt(as.matrix(distances)[genes$scaffold==SCAF,genes$scaffold==SCAF]))
+    p<-ggplot(distances_foo, aes(x=Var1, y=Var2, fill=value) ) + geom_tile() + scale_fill_continuous(type = "viridis") + theme_bw() + labs (title=paste("Heatmap of pairwise clustering distances,",SCAF),x="",y="")
+    print(p)
+}
+```
+
+### Plot consensus tree topology per scaffold
+
+```{r}
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+{
+    consino<-consensus(loci_trees[genes[,1]==SCAF], p = 0.5, check.labels = TRUE)
+  #plot(consino,main=paste("Consensus Topology of cluster",i),tip.color=as.numeric(factor(mat[consino$tip.label,2])))
+  p<-ggtree(consino) + geom_tippoint(color=as.numeric(factor(mat[consino$tip.label,2])),size=3) + geom_tiplab(align=TRUE, linetype="dotted", linesize=.3, offset=8) + xlim(0,25) + labs (title=paste("Consensus topology,",SCAF),x="",y="") 
+  print(p)
+}
+```
+
+### Plot overall consensus topology
+
+```{r, fig.width = 7, fig.height=14}
+#for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+#{
+#    write.tree(loci_trees[genes[,1]==SCAF],paste("/Users/Fernando/Desktop/3_Phylogenomics/",SCAF,"arboles.tree",sep=""))
+#}
+library(phylotate)
+cupo<-read_annotated("/Users/Fernando/Desktop/3_Phylogenomics/RAxML_MajorityRuleExtendedConsensusTree_IC.mre",format="newick")
+p<-ggtree(cupo) + geom_tiplab(align=TRUE, linetype="dotted", linesize=.3, offset=8) + xlim(0,25) + labs (title="Extended Majority Rule Consensus annotated with TC and IC support values.",x="",y="") + geom_text(aes(label=cupo$node.distance.comment), hjust=1, vjust=-0.6)
+print(p)
+ # + geom_tippoint(color=as.numeric(factor(mat[consino$tip.label,2])),size=3) 
+```
+
+### Use the consensus tree to summarize comparative genomic data
+
+```{r, fig.width = 10, fig.height=7}
+library(aplot)
+info<-synopsis_backup
+rownames(info)<-info$Species<-c("Xanpa","Cafla","Pyrenodesmiaerodens","PyrenodesmiaX2","PyrenodesmiaX3","PyrenodesmiaX4","PyrenodesmiaX5","PyrenodesmiaX6","PyrenodesmiaX7","PyrenodesmiaX8","PyrenodesmiaX9","PyrenodesmiaY1","PyrenodesmiaY2","PyrenodesmiaY3","PyrenodesmiaY4","PyrenodesmiaY5","PyrenodesmiaY6","PyrenodesmiaY7","PyrenodesmiaY8","PyrenodesmiaY9","PyrenodesmiaY10","PyrenodesmiaY11","PyrenodesmiaY12","PyrenodesmiaY13","PyrenodesmiaY14")
+info$name_correct<-c("Xanthoria parietina",
+                     "Gyalolechia flavorubescens",
+                     "Pyrenodesmia erodens",            
+                     "Pyrenodesmia transcaspica X2",
+                     "Pyrenodesmia variabilis X3",
+                     "Pyrenodesmia chalybaea X4",
+                     "Pyrenodesmia micromontana X5",
+                     "Pyrenodesmia medit1 X6",
+                     "Pyrenodesmia alociza X7",
+                     "Pyrenodesmia circumalbata X8",
+                     "Pyrenodesmia micromarina X9",
+                     "Pyrenodesmia chalybaea Y1",
+                     "Pyrenodesmia variabilis Y2",
+                     "Pyrenodesmia variabilis Y3",
+                     "Pyrenodesmia variabilis Y4",
+                     "Pyrenodesmia variabilis Y5",
+                     "Pyrenodesmia sp. Y6",
+                     "Pyrenodesmia alociza Y7",
+                     "Pyrenodesmia albovariegata Y8",
+                     "Pyrenodesmia alociza Y9",
+                     "Pyrenodesmia circumalbata Y10",
+                     "Pyrenodesmia alociza Y11",
+                     "Pyrenodesmia cf. albopruinosa Y12",
+                     "Pyrenodesmia medit1 Y13",
+                     "Pyrenodesmia cf. micromarina Y14")
+info$cluster<-c(NA,
+                NA,
+                4,            
+                9,
+                8,
+                5,
+                1,
+                10,
+                2,
+                8,
+                6,
+                5,
+                9,
+                8,
+                8,
+                8,
+                6,
+                2,
+                9,
+                3,
+                8,
+                6,
+                1,
+                10,
+                6)
+
+info<-info[cupo$tip.label,]
+info$Percent.GC<-as.numeric(info$Percent.GC)
+info$node<-1:25
+info<-fortify(info)
+#facet_plot(p,panel="Size",data=info,geom=geom_bar,mapping = aes (x=Percent.GC))
+
+pfams<-read.csv("/Users/Fernando/Desktop/compare_all/pfam/pfam.results.csv",row.names = 1)
+pfams_1<-pfams[,c("descriptions")]
+pfams_2<-pfams[,!(colnames(pfams)%in%c("descriptions"))]
+
+cazymes<-read.csv("/Users/Fernando/Desktop/compare_all/cazy/CAZyme.all.results.csv",row.names = 1)
+
+merops<-read.csv("/Users/Fernando/Desktop/compare_all/merops/MEROPS.all.results.csv",row.names = 1)
+
+cogs<-read.csv("/Users/Fernando/Desktop/compare_all/cogs/COGS.all.results.csv",row.names = 1)
+
+interpro<-read.csv("/Users/Fernando/Desktop/compare_all/interpro/interproscan.results.csv",row.names = 1)
+interpro_desc<-interpro$descriptions
+interpro<-interpro[,!(colnames(interpro)%in%c("descriptions"))]
+#
+# Process and obtain residual distributions
+#
+results_all<-list(
+  cazymes=apply(cazymes,1,FUN=function(x){(x[3]-mean(x[-3]))/sqrt(mean(x[-3]))}),
+  pfams=apply(pfams_2,1,FUN=function(x){(x[3]-median(x[-3]))/sqrt(median(x[-3]))}),
+  merops=apply(merops,1,FUN=function(x){(x[3]-median(x[-3]))/sqrt(median(x[-3]))}),
+  cogs=apply(cogs,1,FUN=function(x){(x[3]-median(x[-3]))/sqrt(median(x[-3]))}),
+  interpro=apply(interpro,1,FUN=function(x){(x[3]-median(x[-3]))/sqrt(median(x[-3]))})
+)
+results_all<-melt(results_all)
+#
+# TAKE OUT NAS DUE TO 0/0
+#
+results_all<-results_all[!is.na(results_all$value),]
+results_all$L1<-factor(results_all$L1,levels=c("interpro","pfams","cazymes","cogs","merops"))
+```
+
+### Most PFAMs are equally present across all samples
+
+The observed value of P.erodens is mostly equal to the median of the PFAm table occurrences (The residual Obs-Expected/sqrt(Expected) is zero).
+
+```{r}
+ggplot(data.frame(results_all),aes(x=value,group=L1,fill=L1)) + geom_density(alpha=0.25) + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+
+Taking out all PFAMs with residuals different to zero we observe a higher frequency of negative than possitive residuals
+
+```{r}
+results_all<-results_all[results_all$value!=0,]
+
+ggplot(results_all[results_all$L1%in%c("cazymes","interpro","pfams"),],aes(x=value,group=L1,fill=L1)) + geom_density(aes(y = ..count..), alpha=0.5) + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(7,5,4,1,2,9,10,3)])
+```
+```{r}
+ipr<-apply(interpro,1,FUN=function(x){(x[3]-median(x[-3]))/sqrt(median(x[-3]))})
+foo<-ipr!=0&!(is.na(ipr))&!(is.infinite(ipr))
+foo<-data.frame(desc=interpro_desc[foo],res=ipr[foo])
+foo<-foo[order(foo$res),]
+```
+
+```{r}
+p<-ggtree(cupo) %<+% info  + geom_tiplab(aes(label=name_correct),fontface=3,align=TRUE, linetype="dotted", linesize=.3, offset=3) + xlim(0,25) + geom_tippoint(aes(color=colorinos.bipolar[cluster]),size = 5) + theme(legend.position='none') + geom_text(aes(label=cupo$node.distance.comment), hjust=1, vjust=-0.6, size=2.5)
+
+p2<-ggplot(data=info,aes(y=Percent.GC,x=Species))+geom_point(,col=colorinos.bipolar[1],pch=20,size=10)+coord_flip()+ theme_tree2() + theme(legend.position='none') + ylim(c(35,55))+geom_hline(yintercept = 50,col=colorinos.bipolar[6])
+
+p3<-ggplot(data=info,aes(y=Assembly.Size,x=Species))+geom_col(aes(fill=colorinos.bipolar[cluster]),alpha=0.5)+coord_flip()+ theme_tree2() + theme(legend.position='none') + xlim(0,25)
+
+p4<-ggplot(data=info,aes(y=Num.Genes,x=Species))+geom_col(aes(fill=colorinos.bipolar[cluster]),alpha=0.5)+coord_flip()+ theme_tree2() + theme(legend.position='none') + xlim(0,25)
+
+p5<-ggplot(data=info,aes(y=Unique.Proteins,x=Species))+geom_col(aes(fill=colorinos.bipolar[cluster]),alpha=0.5)+coord_flip()+ theme_tree2() + theme(legend.position='none') + xlim(0,25)
+
+   p6<-ggplot(data=info,aes(y=Scaffold.N50,x=Species))+geom_col(aes(fill=colorinos.bipolar[cluster]),alpha=0.5)+coord_flip()+ theme_tree2() + theme(legend.position='none') + xlim(0,25)
+```
+```{r, fig.width = 10, fig.height=4}
+p2  %>% insert_left(p,width = 2) %>% insert_right(p3 +scale_y_reverse(),width = 0.5) %>% insert_right(p6,width = 0.5) %>%insert_right(p4 +scale_y_reverse(),width = 0.5) %>%insert_right(p5,width = 0.5)
+```
+
+### ACE of number of tRNAs
+```{r}
+chars<-synopsis_backup$Num.tRNA[sapply(c("flavorubescens","parietina","erodens","X8","X3","Y4","Y5","Y10","Y3","X4","Y1","Y14","X9","Y6","Y11","X2","Y8","Y9","X7","Y7","Y2","X5","Y12","X6","Y13"),FUN=function(x){grep(paste0(x,"$"),synopsis_backup[,1])})]
+arbol<-ace(chars,as.phylo(TreeTools::RootTree(cupo,"Xanpa")))
+```
+
+
+
+## Phylogenetic concordance between loci
+
+```{r, fig.width=22,fig.height=17}
+logfile<-NULL
+swindow<-NULL
+plots<-list()
+limite<-length(pe_genome[[1]])/1000
+step=20
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+  {
+    foo.dist<-as.matrix(distances)[genes$scaffold==SCAF,genes$scaffold==SCAF]
+    foo.loc<-as.numeric(as.character(genes$start[genes$scaffold==SCAF]))/1000
+    if(dim(foo.dist)[1]>=21)
+    {
+      for (i in 1:(dim(foo.dist)[1]-step))
+        {
+        swindow<-c(swindow,mean(foo.dist[c(i:(i+step)),c(i:(i+step))]))
+        }
+        logfile<-rbind(logfile,cbind(swindow,foo.loc[1:length(swindow)],as.numeric(sapply(strsplit(SCAF,"_"),`[`,2))))
+        culo<-lrar[lrar$Name==SCAF,]
+        #culo2<-rip[lrar$Name==SCAF,]
+        p<-ggplot(
+          data.frame(mean_dist=swindow,x=foo.loc[1:length(swindow)]),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(2.5,12.5)) +
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=2.5,ymax=12.5,alpha = .3,fill = spectrum[1]) +
+          geom_point(size=0.5) +
+          geom_step() +
+          scale_color_continuous(type = "viridis", limits = range(2.5, 12.5))+
+          theme_bw() +
+          labs (title=paste("Sliding window of clustering distances across",SCAF),x="location",y="clustering distance")
+    if (length(unlist(het[het[,1]==SCAF,]))!=0)
+    {
+          plots[[SCAF]]<-p+geom_vline(xintercept = as.numeric(as.character(het[het[,1]==SCAF,2]))/1000, linetype = "longdash")+ theme(legend.position = "none")
+    }else{
+    plots[[SCAF]]<-p + theme(legend.position = "none")
+    }
+}
+#annotate("path",x=culo2$Start[order(culo2$Start)]/1000,y=culo2$GC.Content[order(culo2$Start)]/10, ymax=15, linetype=3, color = spectrum[2]) +
+swindow<-NULL
+}
+logfile_distances<-logfile
+```
+```{r, fig.width=22,fig.height=17}
+pempty<-list()
+for (SCAF in c("scaffold_20","scaffold_21","scaffold_25","scaffold_31","scaffold_32","scaffold_33","scaffold_34","scaffold_35","scaffold_36"))
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    pempty[[SCAF]]<-ggplot(
+          data.frame(mean_dist=c(5,5,5),x=c(0,1000,10000)),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(2.5,12.5))+theme_bw()+
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=2.5,ymax=12.5,alpha = .3,fill = spectrum[1])+
+          labs (title=paste("Not enough single copy orthologs were found on ",SCAF),x="location",y="clustering distance")
+}
+plots[[1]]/plots[[5]]/plots[[9]]/plots[[13]]/plots[[17]]/pempty[[2]]/pempty[[3]]/plots[[26]]/pempty[[6]]|
+plots[[2]]/plots[[6]]/plots[[10]]/plots[[14]]/plots[[18]]/plots[[20]]/plots[[23]]/plots[[27]]/pempty[[7]]|
+plots[[3]]/plots[[7]]/plots[[11]]/plots[[15]]/plots[[19]]/plots[[21]]/plots[[24]]/pempty[[4]]/pempty[[8]]|
+plots[[4]]/plots[[8]]/plots[[12]]/plots[[16]]/pempty[[1]]/plots[[22]]/plots[[25]]/pempty[[5]]/pempty[[9]]
+```
+
+## Mapping dN/dS ratios along the genome
+
+### Sliding window of dN/dS
+
+```{r}
+logfile<-NULL
+swindow<-NULL
+step=20
+foo.genes<-genes[rownames(ogs),]
+plots<-list()
+limite<-length(pe_genome[[1]])/1000
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+  {
+    foo.dnds<-ogs$dn_ds[foo.genes$scaffold==SCAF]
+    foo.loc<-as.numeric(as.character(foo.genes$start[foo.genes$scaffold==SCAF]))/1000
+    if(length(foo.dnds)>=21)
+    {
+      for (i in 1:(length(foo.dnds)-step))
+        {
+        swindow<-c(swindow,mean(foo.dnds[c(i:(i+step))]))
+        }
+        logfile<-rbind(logfile,cbind(swindow,foo.loc[1:length(swindow)],as.numeric(sapply(strsplit(SCAF,"_"),`[`,2))))
+        culo<-lrar[lrar$Name==SCAF,]
+        p<-ggplot(
+          data.frame(mean_dnds=swindow,x=foo.loc[1:length(swindow)]),
+          aes(x=x, y=mean_dnds, color=mean_dnds)) +
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0.05,ymax=0.25,alpha =.1,fill = spectrum[1]) +
+          geom_point(size=2) +
+          geom_step() +
+          scale_color_continuous(type = "viridis", limits = range(0.07,0.22)) +
+          xlim(c(0,limite)) + ylim(c(0.05,0.25)) +
+          theme_bw() +
+          labs (title=paste("Sliding window of dN/dS",SCAF),x="location",y="clustering distance")
+    if (length(unlist(het[het[,1]==SCAF,]))!=0)
+    {
+          plots[[SCAF]]<- p + geom_vline(xintercept = as.numeric(as.character(het[het[,1]==SCAF,2]))/1000, linetype = "longdash")+ theme(legend.position = "none")
+    }else{
+    plots[[SCAF]]<-p + theme(legend.position = "none")
+      }
+    }
+    swindow<-NULL
+}
+logfile_dnds<-logfile
+```
+```{r}
+#, fig.width=22,fig.height=17}
+pempty<-list()
+for (SCAF in c("scaffold_20","scaffold_21","scaffold_25","scaffold_31","scaffold_32","scaffold_33","scaffold_34","scaffold_35","scaffold_36"))
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    pempty[[SCAF]]<-ggplot(
+          data.frame(mean_dist=c(5,5,5),x=c(0,1000,10000)),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(0.05,0.25))+theme_bw()+
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0.05,ymax=0.25,alpha = .3,fill = spectrum[1])+
+          labs (title=paste("Not enough single copy orthologs were found on ",SCAF),x="location",y="clustering distance")
+}
+#plots[[1]]/plots[[5]]/plots[[9]]/plots[[13]]/plots[[17]]/pempty[[2]]/pempty[[3]]/plots[[26]]/pempty[[6]]|
+#plots[[2]]/plots[[6]]/plots[[10]]/plots[[14]]/plots[[18]]/plots[[20]]/plots[[23]]/plots[[27]]/pempty[[7]]|
+#plots[[3]]/plots[[7]]/plots[[11]]/plots[[15]]/plots[[19]]/plots[[21]]/plots[[24]]/pempty[[4]]/pempty[[8]]|
+#plots[[4]]/plots[[8]]/plots[[12]]/plots[[16]]/pempty[[1]]/plots[[22]]/plots[[25]]/pempty[[5]]/pempty[[9]]
+lapply(plots,print)
+```
+
+
+### Plot of dN/dS values per ortholog, not on a sliding window.
+
+```{r}
+logfile<-NULL
+swindow<-NULL
+foo.genes<-genes[rownames(ogs),]
+plots<-list()
+limite<-length(pe_genome[[1]])/1000
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    foo.dnds<-ogs$dn_ds[foo.genes$scaffold==SCAF]
+    foo.loc<-as.numeric(as.character(foo.genes$start[foo.genes$scaffold==SCAF]))/1000
+        p<-ggplot(
+          data.frame(dnds=foo.dnds,x=foo.loc),
+          aes(x=x, y=dnds, color=dnds)) +
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0,ymax=1,alpha =.1,fill = spectrum[1]) +
+          geom_point(size=2) +
+          geom_step() +
+          scale_color_continuous(type = "viridis", limits = range(0,1)) +
+          xlim(c(0,limite)) + ylim(c(0,1)) +
+          theme_bw() +
+          labs (title=paste("Sliding window of dN/dS",SCAF),x="location",y="clustering distance")
+    if (length(unlist(het[het[,1]==SCAF,]))!=0)
+    {
+          plots[[SCAF]]<- p + geom_vline(xintercept = as.numeric(as.character(het[het[,1]==SCAF,2]))/1000, linetype = "longdash") + theme(legend.position = "none") 
+    }else{
+    plots[[SCAF]]<-p + theme(legend.position = "none")
+      }
+    swindow<-NULL
+}
+```
+```{r, fig.width=22,fig.height=17}
+pempty<-list()
+for (SCAF in c("scaffold_20","scaffold_21","scaffold_25","scaffold_31","scaffold_32","scaffold_33","scaffold_34","scaffold_35","scaffold_36"))
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    pempty[[SCAF]]<-ggplot(
+          data.frame(mean_dist=c(5,5,5),x=c(0,1000,10000)),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(0,1))+theme_bw()+
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0,ymax=1,alpha = .3,fill = spectrum[1])+
+          labs (title=paste("Not enough single copy orthologs were found on ",SCAF),x="location",y="clustering distance")
+}
+plots[[1]]/plots[[5]]/plots[[9]]/plots[[13]]/plots[[17]]/pempty[[2]]/pempty[[3]]/plots[[26]]/pempty[[6]]|
+plots[[2]]/plots[[6]]/plots[[10]]/plots[[14]]/plots[[18]]/plots[[20]]/plots[[23]]/plots[[27]]/pempty[[7]]|
+plots[[3]]/plots[[7]]/plots[[11]]/plots[[15]]/plots[[19]]/plots[[21]]/plots[[24]]/pempty[[4]]/pempty[[8]]|
+plots[[4]]/plots[[8]]/plots[[12]]/plots[[16]]/pempty[[1]]/plots[[22]]/plots[[25]]/pempty[[5]]/pempty[[9]]
+```
+### Average LRT M1/M2 (M1 = Almost Neutral, M2 = Positive selection) over a sliding window
+
+```{r}
+logfile<-NULL
+swindow<-NULL
+step=20
+foo.genes<-genes[rownames(ogs),]
+plots<-list()
+limite<-length(pe_genome[[1]])/1000
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+  {
+    foo.dnds<-ogs$uno[foo.genes$scaffold==SCAF]
+    foo.loc<-as.numeric(as.character(foo.genes$start[foo.genes$scaffold==SCAF]))/1000
+    if(length(foo.dnds)>=21)
+    {
+      for (i in 1:(length(foo.dnds)-step))
+        {
+        swindow<-c(swindow,mean(foo.dnds[c(i:(i+step))]))
+        }
+        logfile<-rbind(logfile,cbind(swindow,foo.loc[1:length(swindow)],as.numeric(sapply(strsplit(SCAF,"_"),`[`,2))))
+        culo<-lrar[lrar$Name==SCAF,]
+        p<-ggplot(
+          data.frame(mean_dnds=swindow,x=foo.loc[1:length(swindow)]),
+          aes(x=x, y=mean_dnds, color=mean_dnds)) +
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0.7,ymax=1,alpha =.1,fill = spectrum[1]) +
+          geom_point(size=2) +
+          geom_step() +
+          scale_color_continuous(type = "viridis", limits = range(0.70,1)) +
+          xlim(c(0,limite)) + ylim(c(0.7,1)) +
+          theme_bw() +
+          labs (title=paste("Sliding window of M1/M2",SCAF),x="location",y="clustering distance")
+    if (length(unlist(het[het[,1]==SCAF,]))!=0)
+    {
+          plots[[SCAF]]<- p + geom_vline(xintercept = as.numeric(as.character(het[het[,1]==SCAF,2]))/1000, linetype = "longdash") + theme(legend.position = "none") 
+    }else{
+    plots[[SCAF]]<-p + theme(legend.position = "none")
+      }
+    }
+    swindow<-NULL
+}
+logfile_m1m2<-logfile
+```
+
+```{r, fig.width=22,fig.height=17}
+pempty<-list()
+for (SCAF in c("scaffold_20","scaffold_21","scaffold_25","scaffold_31","scaffold_32","scaffold_33","scaffold_34","scaffold_35","scaffold_36"))
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    pempty[[SCAF]]<-ggplot(
+          data.frame(mean_dist=c(5,5,5),x=c(0,1000,10000)),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(0.7,1))+theme_bw()+
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0.7,ymax=1,alpha = .3,fill = spectrum[1])+
+          labs (title=paste("Not enough single copy orthologs were found on ",SCAF),x="location",y="clustering distance")
+}
+plots[[1]]/plots[[5]]/plots[[9]]/plots[[13]]/plots[[17]]/pempty[[2]]/pempty[[3]]/plots[[26]]/pempty[[6]]|
+plots[[2]]/plots[[6]]/plots[[10]]/plots[[14]]/plots[[18]]/plots[[20]]/plots[[23]]/plots[[27]]/pempty[[7]]|
+plots[[3]]/plots[[7]]/plots[[11]]/plots[[15]]/plots[[19]]/plots[[21]]/plots[[24]]/pempty[[4]]/pempty[[8]]|
+plots[[4]]/plots[[8]]/plots[[12]]/plots[[16]]/pempty[[1]]/plots[[22]]/plots[[25]]/pempty[[5]]/pempty[[9]]
+```
+
+### Orthologwise values for LRT M1/M2 (M1 = Almost Neutral, M2 = Positive selection)
+
+```{r}
+logfile<-NULL
+swindow<-NULL
+foo.genes<-genes[rownames(ogs),]
+plots<-list()
+limite<-length(pe_genome[[1]])/1000
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    foo.dnds<-ogs$uno[foo.genes$scaffold==SCAF]
+    foo.loc<-as.numeric(as.character(foo.genes$start[foo.genes$scaffold==SCAF]))/1000
+        p<-ggplot(
+          data.frame(dnds=foo.dnds,x=foo.loc),
+          aes(x=x, y=dnds, color=dnds)) +
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0,ymax=1,alpha =.1,fill = spectrum[1]) +
+          geom_point(size=2) +
+          geom_step() +
+          scale_color_continuous(type = "viridis", limits = range(0,1)) +
+          xlim(c(0,limite)) + ylim(c(0,1)) +
+          theme_bw() +
+          labs (title=paste("LRT M1/M2",SCAF),x="location",y="clustering distance")
+    if (length(unlist(het[het[,1]==SCAF,]))!=0)
+    {
+          plots[[SCAF]]<- p + geom_vline(xintercept = as.numeric(as.character(het[het[,1]==SCAF,2]))/1000, linetype = "longdash") + theme(legend.position = "none")
+    }else{
+    plots[[SCAF]]<-p + theme(legend.position = "none")
+      }
+    swindow<-NULL
+}
+```
+```{r, fig.width=22,fig.height=17}
+pempty<-list()
+for (SCAF in c("scaffold_20","scaffold_21","scaffold_25","scaffold_31","scaffold_32","scaffold_33","scaffold_34","scaffold_35","scaffold_36"))
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    pempty[[SCAF]]<-ggplot(
+          data.frame(mean_dist=c(5,5,5),x=c(0,1000,10000)),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(0,1))+theme_bw()+
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0,ymax=1,alpha = .3,fill = spectrum[1])+
+          labs (title=paste("Not enough single copy orthologs were found on ",SCAF),x="location",y="clustering distance")
+}
+plots[[1]]/plots[[5]]/plots[[9]]/plots[[13]]/plots[[17]]/pempty[[2]]/pempty[[3]]/plots[[26]]/pempty[[6]]|
+plots[[2]]/plots[[6]]/plots[[10]]/plots[[14]]/plots[[18]]/plots[[20]]/plots[[23]]/plots[[27]]/pempty[[7]]|
+plots[[3]]/plots[[7]]/plots[[11]]/plots[[15]]/plots[[19]]/plots[[21]]/plots[[24]]/pempty[[4]]/pempty[[8]]|
+plots[[4]]/plots[[8]]/plots[[12]]/plots[[16]]/pempty[[1]]/plots[[22]]/plots[[25]]/pempty[[5]]/pempty[[9]]
+```
+
+### Sliding window of LTR M7/M8 
+
+```{r}
+logfile<-NULL
+swindow<-NULL
+step=20
+foo.genes<-genes[rownames(ogs),]
+plots<-list()
+limite<-length(pe_genome[[1]])/1000
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+  {
+    foo.dnds<-ogs$dos[foo.genes$scaffold==SCAF]
+    foo.loc<-as.numeric(as.character(foo.genes$start[foo.genes$scaffold==SCAF]))/1000
+    if(length(foo.dnds)>=21)
+    {
+      for (i in 1:(length(foo.dnds)-step))
+        {
+        swindow<-c(swindow,mean(foo.dnds[c(i:(i+step))]))
+        }
+        logfile<-rbind(logfile,cbind(swindow,foo.loc[1:length(swindow)],as.numeric(sapply(strsplit(SCAF,"_"),`[`,2))))
+        culo<-lrar[lrar$Name==SCAF,]
+        p<-ggplot(
+          data.frame(mean_dnds=swindow,x=foo.loc[1:length(swindow)]),
+          aes(x=x, y=mean_dnds, color=mean_dnds)) +
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0.05,ymax=0.61,alpha =.1,fill = spectrum[1]) +
+          geom_point(size=2) +
+          geom_step() +
+          scale_color_continuous(type = "viridis", limits = range(0.05,0.61)) +
+          xlim(c(0,limite)) + ylim(c(0.05,0.61)) +
+          theme_bw() +
+          labs (title=paste("Sliding window of M1/M2",SCAF),x="location",y="clustering distance")
+    if (length(unlist(het[het[,1]==SCAF,]))!=0)
+    {
+          plots[[SCAF]]<- p + geom_vline(xintercept = as.numeric(as.character(het[het[,1]==SCAF,2]))/1000, linetype = "longdash") + theme(legend.position = "none")
+    }else{
+    plots[[SCAF]]<-p + theme(legend.position = "none")
+      }
+    }
+    swindow<-NULL
+}
+logfile_m7m8<-logfile
+```
+```{r, fig.width=22,fig.height=17}
+pempty<-list()
+for (SCAF in c("scaffold_20","scaffold_21","scaffold_25","scaffold_31","scaffold_32","scaffold_33","scaffold_34","scaffold_35","scaffold_36"))
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    pempty[[SCAF]]<-ggplot(
+          data.frame(mean_dist=c(5,5,5),x=c(0,1000,10000)),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(0.7,1))+theme_bw()+
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0.05,ymax=0.61,alpha = .3,fill = spectrum[1])+
+          labs (title=paste("Not enough single copy orthologs were found on ",SCAF),x="location",y="clustering distance")
+}
+plots[[1]]/plots[[5]]/plots[[9]]/plots[[13]]/plots[[17]]/pempty[[2]]/pempty[[3]]/plots[[26]]/pempty[[6]]|
+plots[[2]]/plots[[6]]/plots[[10]]/plots[[14]]/plots[[18]]/plots[[20]]/plots[[23]]/plots[[27]]/pempty[[7]]|
+plots[[3]]/plots[[7]]/plots[[11]]/plots[[15]]/plots[[19]]/plots[[21]]/plots[[24]]/pempty[[4]]/pempty[[8]]|
+plots[[4]]/plots[[8]]/plots[[12]]/plots[[16]]/pempty[[1]]/plots[[22]]/plots[[25]]/pempty[[5]]/pempty[[9]]
+```
+
+
+### LRT M7/M8
+
+```{r}
+logfile<-NULL
+swindow<-NULL
+foo.genes<-genes[rownames(ogs),]
+plots<-list()
+limite<-length(pe_genome[[1]])/1000
+for (SCAF in levels(genes$scaffold)[order(as.numeric(sapply(strsplit(levels(genes$scaffold),"_"),`[`,2)))])
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    foo.dnds<-ogs$dos[foo.genes$scaffold==SCAF]
+    foo.loc<-as.numeric(as.character(foo.genes$start[foo.genes$scaffold==SCAF]))/1000
+        p<-ggplot(
+          data.frame(dnds=foo.dnds,x=foo.loc),
+          aes(x=x, y=dnds, color=dnds)) +
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0,ymax=1,alpha =.1,fill = spectrum[1]) +
+          geom_point(size=2) +
+          geom_step() +
+          scale_color_continuous(type = "viridis", limits = range(0,1)) +
+          xlim(c(0,limite)) + ylim(c(0,1)) +
+          theme_bw() +
+          labs (title=paste("Sliding window of M7/M8",SCAF),x="location",y="clustering distance")
+    if (length(unlist(het[het[,1]==SCAF,]))!=0)
+    {
+          plots[[SCAF]]<- p + geom_vline(xintercept = as.numeric(as.character(het[het[,1]==SCAF,2]))/1000, linetype = "longdash") + theme(legend.position = "none")
+    }else{
+    plots[[SCAF]]<-p+ theme(legend.position = "none")
+      }
+    swindow<-NULL
+}
+```
+```{r, fig.width=22,fig.height=17}
+pempty<-list()
+for (SCAF in c("scaffold_20","scaffold_21","scaffold_25","scaffold_31","scaffold_32","scaffold_33","scaffold_34","scaffold_35","scaffold_36"))
+  {
+    culo<-lrar[lrar$Name==SCAF,]
+    pempty[[SCAF]]<-ggplot(
+          data.frame(mean_dist=c(5,5,5),x=c(0,1000,10000)),
+          aes(x=x, y=mean_dist, color=mean_dist)) + xlim(c(0,limite)) + ylim(c(0,1))+theme_bw()+
+          annotate("rect",xmin=culo$Start/1000,xmax=culo$End/1000,ymin=0,ymax=1,alpha = .3,fill = spectrum[1])+
+          labs (title=paste("Not enough single copy orthologs were found on ",SCAF),x="location",y="clustering distance")
+}
+plots[[1]]/plots[[5]]/plots[[9]]/plots[[13]]/plots[[17]]/pempty[[2]]/pempty[[3]]/plots[[26]]/pempty[[6]]|
+plots[[2]]/plots[[6]]/plots[[10]]/plots[[14]]/plots[[18]]/plots[[20]]/plots[[23]]/plots[[27]]/pempty[[7]]|
+plots[[3]]/plots[[7]]/plots[[11]]/plots[[15]]/plots[[19]]/plots[[21]]/plots[[24]]/pempty[[4]]/pempty[[8]]|
+plots[[4]]/plots[[8]]/plots[[12]]/plots[[16]]/pempty[[1]]/plots[[22]]/plots[[25]]/pempty[[5]]/pempty[[9]]
+```
+### Circos plot distance and dn/ds
+
+```{r, fig.height=7,fig.width=7}
+ranges_phylodist<-makeGRangesFromDataFrame(data.frame(chr=paste("scaffold_",logfile_distances[,3],sep=""),start=logfile_distances[,2]*1000,end=(logfile_distances[,2]*1000)+100,dist=logfile_distances[,1]),
+                         keep.extra.columns=TRUE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="chr",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+
+ranges_dnds<-makeGRangesFromDataFrame(data.frame(chr=paste("scaffold_",logfile_dnds[,3],sep=""),start=logfile_dnds[,2]*1000,end=(logfile_dnds[,2]*1000)+100,dist=logfile_dnds[,1]),
+                         keep.extra.columns=TRUE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="chr",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+ranges_m1m2<-makeGRangesFromDataFrame(data.frame(chr=paste("scaffold_",logfile_m1m2[,3],sep=""),start=logfile_m1m2[,2]*1000,end=(logfile_m1m2[,2]*1000)+100,dist=logfile_m1m2[,1]),
+                         keep.extra.columns=TRUE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="chr",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+ranges_m7m8<-makeGRangesFromDataFrame(data.frame(chr=paste("scaffold_",logfile_m7m8[,3],sep=""),start=logfile_m7m8[,2]*1000,end=(logfile_m7m8[,2]*1000)+100,dist=logfile_m7m8[,1]),
+                         keep.extra.columns=TRUE,
+                         ignore.strand=FALSE,
+                         seqinfo=NULL,
+                         seqnames.field="chr",
+                         start.field="start",
+                         end.field="end",
+                         strand.field="strand",
+                         starts.in.df.are.0based=FALSE)
+```
+
+```{r,fig.width=7,fig.height=7}
+shared.ogs<-strsplit(all.ogs$V5,split=", ")
+
+shared.ogs<-melt(shared.ogs)
+
+shared.ogs<-shared.ogs[grep("Pyrenodesmiaerodens",shared.ogs$value),]
+
+shared.ogs$value<-as.character(shared.ogs$value)
+shared.ogs$value<-gsub("-T1","",shared.ogs$value)
+shared.ogs<-shared.ogs[shared.ogs[,2]%in%shared.ogs[,2][duplicated(shared.ogs[,2])],]
+foo_uno<-unlist(strsplit(genes.all[shared.ogs$value,1],":"))
+dim(foo_uno)<-c(2,length(foo_uno)/2)
+foo_uno<-t(foo_uno)
+shared.ogs<-cbind(shared.ogs,scaf=foo_uno[,1],start=sapply(strsplit(foo_uno[,2],"-"),`[`,1),end=sapply(strsplit(foo_uno[,2],"-"),`[`,2))
+#shared.ogs$scaf<-as.numeric(gsub("scaffold_","",shared.ogs$scaf))
+```
+```{r,fig.width=7,fig.height=7}
+
+base.for.circos<-function(GENOME,LINKS,LOST=lost_genes)
+{
+require(circlize)
+#------------------
+# Initialize
+#------------------
+circos.genomicInitialize(data.frame(names=names(GENOME),start=0,end=sapply(GENOME,length)),sector.names = c(1:36))
+circos.genomicTrack(ylim=c(0,1), track.height=0.01,bg.col=NA,bg.border=TRUE,cell.padding=c(0,0,0,0))
+# First track LRAR
+for (i in names(GENOME))
+{
+  foo<-lrar_flanks[lrar_flanks@seqnames==i,]
+    if (length(foo)>0)
+  {
+    circos.genomicRect(cbind(foo@ranges@start,foo@ranges@start+foo@ranges@width), sector.index = i,ytop = 1, ybottom = 0, col=colorinos.bipolar[1], border = NA)
+  }
+    foo<-telomere_locs[telomere_locs@seqnames==i,]
+    if (length(foo)>0)
+  {
+    circos.genomicRect(cbind(foo@ranges@start,foo@ranges@start+foo@ranges@width), sector.index = i,ytop = 1, ybottom = 0, col=colorinos.bipolar[4], border = NA)
+    }
+}
+#
+circos.genomicTrack(ylim=c(2.5,12.5), track.height=0.15,bg.col=NA,bg.border=TRUE,cell.padding=c(0,0,0,0))
+# First track
+foo2<-as.data.frame(ranges_phylodist)
+foo2<-cbind(foo2,
+              color=spectrum[round(30*(foo2$dist-min(foo2$dist))/(max(foo2$dist)-min(foo2$dist)))+1])
+for (i in names(GENOME))
+{
+  foo<-lrar[lrar$Name==i,]
+  foo3<-foo2[foo2$seqnames==i,]
+  foo3$end<-c(foo3$start[-1],foo3$start[dim(foo3)[1]])
+  if (dim(foo)[1]>0)
+  {
+    circos.genomicRect(foo[,c(2,3)], sector.index = i,ytop = 12.5, ybottom = 2.5, col=c("#6001A655"), border = NA)
+    if (dim(foo3)[1]>0)
+  {
+    circos.genomicPoints(foo3, value=foo3$dist, col = foo3$color, bg = foo3$color, count_by = "number", sector.index = i,pch=20, cex=0.25)
+    circos.segments(foo3$start,foo3$dist,foo3$end,c(foo3$dist[-1],foo3$dist[dim(foo3)[1]]), col = foo3$color, sector.index = i)
+    }
+  }
+}
+#
+circos.genomicTrack(ylim=c(0.05,0.25), track.height=0.15,bg.col=NA,bg.border=TRUE,cell.padding=c(0,0,0,0))
+# First track LRAR
+foo2<-as.data.frame(ranges_dnds)
+foo2<-cbind(foo2,
+              color=spectrum[round(30*(foo2$dist-min(foo2$dist))/(max(foo2$dist)-min(foo2$dist)))+1])
+for (i in names(GENOME))
+{
+  foo<-lrar[lrar$Name==i,]
+  foo3<-foo2[foo2$seqnames==i,]
+  
+  if (dim(foo)[1]>0)
+  {
+    circos.genomicRect(foo[,c(2,3)], sector.index = i,ytop = 0.25, ybottom = 0.05, col=c("#6001A655"), border = NA)
+
+    if (dim(foo3)[1]>0)
+  {
+      circos.genomicPoints(foo3, value=foo3$dist, col = foo3$color, bg = foo3$color, count_by = "number", sector.index = i,pch=20, cex=0.25)
+    circos.segments(foo3$start,foo3$dist,foo3$end,c(foo3$dist[-1],foo3$dist[dim(foo3)[1]]), col = foo3$color, sector.index = i)
+    }
+  }
+}
+# third track links orthogroups
+for (OG in levels(factor(LINKS$L1)))
+{
+  foo4<-LINKS[LINKS$L1==OG,]
+  extent<-dim(foo4)[1]
+  for(i in c(1:(extent-1)))
+  {
+    for (j in c((i+1):extent))
+    {
+      if(foo4$scaf[i]!=foo4$scaf[j])
+        {
+        circos.link(foo4$scaf[i],c(as.numeric(foo4$start[i]),as.numeric(foo4$end[i])),foo4$scaf[j],c(as.numeric(foo4$start[j]),as.numeric(foo4$end[j])),col=c("#6001A655"))
+      }
+    }
+  }
+}
+  }
+
+base.for.circos(pe_genome,shared.ogs,lost_genes)
+```
+
+### Is phylogenetic discordance correlated to the proliferation of transposable elements in the neighbouring LRARs?
+
+```{r}
+ranges_results2<-NULL
+for (REGION in c("general","telomeric","LRAR"))
+  {
+  if (REGION=="general")
+    {ranges2use<-non_telomeric_regions
+  }else if (REGION=="telomeric")
+    {ranges2use<-telomere_locs
+  }else if (REGION=="LRAR")
+  {ranges2use<-lrar_flanks
+    }
+  for (TYPE in c("distance","dnds","m1m2","m7m8"))
+  {
+   if (REGION=="general"&TYPE=="distance")
+    {data2use<-subsetByOverlaps(ranges_phylodist,non_telomeric_regions)
+  }else if (REGION=="telomeric"&TYPE=="distance")
+    {data2use<-subsetByOverlaps(ranges_phylodist,telomere_locs)
+  }else if (REGION=="LRAR"&TYPE=="distance")
+  {data2use<-subsetByOverlaps(ranges_phylodist,lrar_flanks)
+    } else if (REGION=="general"&TYPE=="dnds")
+    {data2use<-subsetByOverlaps(ranges_dnds,non_telomeric_regions)
+  }else if (REGION=="telomeric"&TYPE=="dnds")
+    {data2use<-subsetByOverlaps(ranges_dnds,telomere_locs)
+  }else if (REGION=="LRAR"&TYPE=="dnds")
+  {data2use<-subsetByOverlaps(ranges_dnds,lrar_flanks)
+    } else    if (REGION=="general"&TYPE=="m1m2")
+    {data2use<-subsetByOverlaps(ranges_m1m2,non_telomeric_regions)
+  }else if (REGION=="telomeric"&TYPE=="m1m2")
+    {data2use<-subsetByOverlaps(ranges_m1m2,telomere_locs)
+  }else if (REGION=="LRAR"&TYPE=="m1m2")
+  {data2use<-subsetByOverlaps(ranges_m1m2,lrar_flanks)
+    } else    if (REGION=="general"&TYPE=="m7m8")
+    {data2use<-subsetByOverlaps(ranges_m7m8,non_telomeric_regions)
+  }else if (REGION=="telomeric"&TYPE=="m7m8")
+    {data2use<-subsetByOverlaps(ranges_m7m8,telomere_locs)
+  }else if (REGION=="LRAR"&TYPE=="m7m8")
+  {data2use<-subsetByOverlaps(ranges_m7m8,lrar_flanks)
+    }
+for (I in 1:length(ranges2use))
+{
+if (length(data2use$dist[attr(findOverlaps(data2use,ranges2use[I]),"from")])>0)
+{
+  ranges_results2<-rbind(ranges_results2,cbind(REGION,TYPE,I,mean(  data2use$dist[attr(findOverlaps(data2use,ranges2use[I]),"from")])))
+}
+    }
+  }
+}
+
+ranges_results2<-data.frame(region=factor(ranges_results2[,1]),feature=factor(ranges_results2[,2]),local=ranges_results2[,3],dist=as.numeric(ranges_results2[,4]))
+
+```
+
+#### phylogenetic distance
+
+```{r}
+ggplot(ranges_results2[ranges_results2$feature=="distance",],aes(x=region,y=dist,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Averaged phylogenetic distance between 20 neighbouring orthologs") + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+
+```{r}
+pairwise.wilcox.test(ranges_results2[ranges_results2$feature=="distance","dist"],ranges_results2[ranges_results2$feature=="distance","region"],p.adjust.method = "BH")
+```
+
+#### dn/ds
+
+```{r}
+ggplot(ranges_results2[ranges_results2$feature=="dnds",],aes(x=region,y=dist,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Averaged dn/ds between 20 neighbouring orthologs")+ theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+
+```{r}
+pairwise.wilcox.test(ranges_results2[ranges_results2$feature=="dnds","dist"],ranges_results2[ranges_results2$feature=="dnds","region"],p.adjust.method = "BH")
+```
+
+#### m1/m2
+
+```{r}
+ggplot(ranges_results2[ranges_results2$feature=="m1m2",],aes(x=region,y=dist,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Averaged phylogenetic distance between 20 neighbouring orthologs")+ theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+
+```{r}
+pairwise.wilcox.test(ranges_results2[ranges_results2$feature=="m1m2","dist"],ranges_results2[ranges_results2$feature=="m1m2","region"],p.adjust.method = "BH")
+```
+
+#### m7/m8
+
+```{r}
+ggplot(ranges_results2[ranges_results2$feature=="m7m8",],aes(x=region,y=dist,fill=region,z=feature))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Averaged phylogenetic distance between 20 neighbouring orthologs") + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+
+```{r}
+pairwise.wilcox.test(ranges_results2[ranges_results2$feature=="m7m8","dist"],ranges_results2[ranges_results2$feature=="m7m8","region"],p.adjust.method = "BH")
+```
+
+### Is phylogenetic discordance correlated to the proliferation of transposable elements in the neighbouring LRARs?
+
+```{r}
+#lrar_flanks_with_telomeres
+ranges_lrar<-cbind(tabulate_rep_lrar[,1:4],mean_dist=0)
+ranges_lrar$Start<-ranges_lrar$Start-50000
+ranges_lrar$End<-ranges_lrar$End+50000
+ranges_lrar$Start[ranges_lrar$Start<0]<-0
+for (i in 1:dim(ranges_lrar)[1])
+{
+  ranges_lrar[i,"mean_dist"]<-mean(
+    logfile_distances[logfile_distances[,3]==sapply(strsplit(ranges_lrar[i,1],"_"),`[`,2)&
+               logfile_distances[,2]>=ranges_lrar[i,2]/1000&logfile_distances[,2]<=ranges_lrar[i,3]/1000
+             ,1])
+}
+
+#anova(lm(ranges_lrar$mean_dist~tabulate_rep_lrar[,14]*(tabulate_rep_lrar[,13]+tabulate_rep_lrar[,11])))
+#foo_reg<-cbind(tabulate_rep_lrar,mean_dist = ranges_lrar$mean_dist)
+foo_reg<-cbind(ranges_lrar,tabulate_rep_lrar[,10:19],mean_dist = ranges_lrar$mean_dist)
+fit<-lm(mean_dist~`DNA/hAT-Ac`+`DNA/MULE-MuDR`+`Low_complexity`+`LTR/Copia`+`LTR/Gypsy`+`LTR/Ngaro`+`RC/Helitron`+`Simple_repeat`+`Unknown`+`Unspecified`,data = foo_reg)
+summary(fit)
+```
+```{r}
+anova(fit)
+```
+```{r}
+Mclust(ranges_lrar$mean_dist[!is.na(ranges_lrar$mean_dist)],1:10)
+```
+```{r}
+ggplot(data.frame(lrars=ranges_lrar$mean_dist,class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Distance per LRAR groups") + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_lrar$mean_dist,as.factor(grupos$classification),p.adjust.method = "BH")
+```
+```{r}
+grupos<-Mclust(ranges_lrar$mean_dist[!is.na(ranges_lrar$mean_dist)],1:20)
+```
+```{r}
+ggplot(data.frame(lrars=ranges_lrar$mean_dist[!is.na(ranges_lrar$mean_dist)],class=as.factor(grupos$classification)),aes(x=class,y=lrars,fill=class))+geom_violin(alpha=0.5)+geom_point(position = position_jitter(seed = 1, width = 0.2))+ labs (title="Distance per LRAR groups") + theme_bw() +scale_fill_discrete(type=colorinos.bipolar[c(6,7,5,8,4,1,2,9,10,3)])
+```
+```{r}
+pairwise.wilcox.test(ranges_lrar$mean_dist[!is.na(ranges_lrar$mean_dist)],as.factor(grupos$classification),p.adjust.method = "BH")
+```
